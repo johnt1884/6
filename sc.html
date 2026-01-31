@@ -11,6 +11,8 @@
             --root-sc-color: green;
             --subfolder-sc-color: yellow;
             --both-sc-color: blue;
+            --header-text-color: #1c1e21;
+            --row-number-color: #333;
         }
         html, body {
             height: 100%;
@@ -180,7 +182,7 @@
             outline-offset: -3px;
         }
         .project-header {
-            color: #1c1e21;
+            color: var(--header-text-color);
             font-size: 1.2em;
             font-weight: bold;
             margin-top: 20px;
@@ -213,7 +215,7 @@
         .row-number {
             font-size: 1.5em;
             font-weight: bold;
-            color: #333;
+            color: var(--row-number-color);
             margin-right: 10px;
             align-self: center;
         }
@@ -328,6 +330,14 @@
                         <div class="options-row">
                             <label for="both-sc-color-picker">Both SC Outline</label>
                             <input type="color" id="both-sc-color-picker" value="#0000ff">
+                        </div>
+                        <div class="options-row">
+                            <label for="header-text-color-picker">Folder Header Text</label>
+                            <input type="color" id="header-text-color-picker" value="#1c1e21">
+                        </div>
+                        <div class="options-row">
+                            <label for="row-number-color-picker">Show Numbers Text</label>
+                            <input type="color" id="row-number-color-picker" value="#333333">
                         </div>
                         <button id="revert-defaults-btn" style="width: 100%; text-align: center; border-top: 1px solid #ccc; font-weight: bold;">Revert to Default Colors</button>
                     </div>
@@ -496,7 +506,9 @@
                 'toolbar-color': document.getElementById('toolbar-color-picker'),
                 'root-sc-color': document.getElementById('root-sc-color-picker'),
                 'subfolder-sc-color': document.getElementById('subfolder-sc-color-picker'),
-                'both-sc-color': document.getElementById('both-sc-color-picker')
+                'both-sc-color': document.getElementById('both-sc-color-picker'),
+                'header-text-color': document.getElementById('header-text-color-picker'),
+                'row-number-color': document.getElementById('row-number-color-picker')
             };
 
             // Load saved colors
@@ -526,7 +538,9 @@
                     'toolbar-color': '#1877f2',
                     'root-sc-color': '#008000',
                     'subfolder-sc-color': '#ffff00',
-                    'both-sc-color': '#0000ff'
+                    'both-sc-color': '#0000ff',
+                    'header-text-color': '#1c1e21',
+                    'row-number-color': '#333333'
                 };
                 Object.keys(defaults).forEach(id => {
                     const color = defaults[id];
@@ -1293,6 +1307,7 @@
                 let videoNames = Object.keys(groupedFiles);
                 const videoFileMap = new Map(allVideoFiles.map(f => [f.name.substring(0, f.name.lastIndexOf('.')), f]));
 
+                let addedRows = 0;
                 videoNames.sort((a, b) => {
                     if (sortBy === 'name-asc') return a.localeCompare(b);
                     if (sortBy === 'name-desc') return b.localeCompare(a);
@@ -1320,6 +1335,7 @@
                     const videoFile = videoFileMap.get(videoName);
                     if (!videoFile) continue;
 
+                    addedRows++;
                     const dateInfo = document.createElement('span');
                     dateInfo.className = 'date-info';
                     dateInfo.textContent = `Created: ${new Date(videoFile.lastModified).toLocaleString()}`;
@@ -1398,7 +1414,7 @@
                         allImageLoadPromises.push(promise);
                     });
                 }
-                 if (videoNames.length > 0) {
+                 if (addedRows > 0) {
                     const hr = document.createElement('hr');
                     canvasElements.push(hr);
                     canvases.set(canvasId, { id: canvasId, name: project.name, elements: canvasElements, path: project.path });
