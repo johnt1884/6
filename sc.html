@@ -13,6 +13,7 @@
             --both-sc-color: blue;
             --header-text-color: #1c1e21;
             --row-number-color: #333;
+            --date-text-color: #555;
         }
         html, body {
             height: 100%;
@@ -112,10 +113,18 @@
             resize: vertical;
         }
         .landscape-row {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        .thumbnails-container {
             display: flex;
             flex-wrap: wrap;
             align-items: flex-start;
-            margin-bottom: 10px;
+            position: relative;
+        }
+        .main-container.show-numbers .thumbnails-container {
+            padding-left: 40px;
         }
         .thumbnail.selected-root-sc {
             outline: 3px dashed var(--root-sc-color);
@@ -197,10 +206,14 @@
             display: none;
             font-size: 0.8em;
             font-weight: normal;
-            color: #555;
+            color: var(--date-text-color);
+            margin-bottom: 5px;
         }
         .main-container.show-dates .date-info {
-            display: inline;
+            display: block;
+        }
+        .main-container.show-numbers .date-info {
+            padding-left: 40px;
         }
         .checkbox-container {
             display: flex;
@@ -216,8 +229,11 @@
             font-size: 1.5em;
             font-weight: bold;
             color: var(--row-number-color);
-            margin-right: 10px;
-            align-self: center;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 30px;
+            text-align: right;
         }
         .dropdown-content {
             display: none;
@@ -339,6 +355,10 @@
                             <label for="row-number-color-picker">Show Numbers Text</label>
                             <input type="color" id="row-number-color-picker" value="#333333">
                         </div>
+                        <div class="options-row">
+                            <label for="date-text-color-picker">Date Text Color</label>
+                            <input type="color" id="date-text-color-picker" value="#555555">
+                        </div>
                         <button id="revert-defaults-btn" style="width: 100%; text-align: center; border-top: 1px solid #ccc; font-weight: bold;">Revert to Default Colors</button>
                     </div>
                 </div>
@@ -456,17 +476,18 @@
 
         function updateRowNumbers() {
             const showNumbers = showNumbersCheckbox.checked;
-            const rows = document.querySelectorAll('.landscape-row');
+            mainContainer.classList.toggle('show-numbers', showNumbers);
+            const containers = document.querySelectorAll('.thumbnails-container');
             
             // First, remove any existing numbers to avoid duplicates
             document.querySelectorAll('.row-number').forEach(num => num.remove());
 
             if (showNumbers) {
-                rows.forEach((row, index) => {
+                containers.forEach((container, index) => {
                     const numberSpan = document.createElement('span');
                     numberSpan.className = 'row-number';
                     numberSpan.textContent = index + 1;
-                    row.insertBefore(numberSpan, row.firstChild);
+                    container.insertBefore(numberSpan, container.firstChild);
                 });
             }
         }
@@ -500,7 +521,8 @@
                 'subfolder-sc-color': document.getElementById('subfolder-sc-color-picker'),
                 'both-sc-color': document.getElementById('both-sc-color-picker'),
                 'header-text-color': document.getElementById('header-text-color-picker'),
-                'row-number-color': document.getElementById('row-number-color-picker')
+                'row-number-color': document.getElementById('row-number-color-picker'),
+                'date-text-color': document.getElementById('date-text-color-picker')
             };
 
             // Load saved colors
@@ -532,7 +554,8 @@
                     'subfolder-sc-color': '#ffff00',
                     'both-sc-color': '#0000ff',
                     'header-text-color': '#1c1e21',
-                    'row-number-color': '#333333'
+                    'row-number-color': '#333333',
+                    'date-text-color': '#555555'
                 };
                 Object.keys(defaults).forEach(id => {
                     const color = defaults[id];
@@ -752,6 +775,7 @@
 
             populateCanvasDropdown();
             layoutLandscapeThumbnails(); // Re-layout after switching canvas
+            updateRowNumbers(); // Ensure numbers are shown if enabled
         }
 
         function populateCanvasDropdown() {
@@ -1227,23 +1251,7 @@
 
                 const canvasId = getNextCanvasId();
                 const canvasElements = [];
-
-                const header = document.createElement('h2');
-                header.className = 'project-header';
-                
-                const headerText = document.createElement('span');
-                headerText.textContent = project.name;
-                header.appendChild(headerText);
-
                 let mostRecentShortcutTime = project.timestamp || 0;
-                if (isNewOnly) {
-                    const headerDateInfo = document.createElement('span');
-                    headerDateInfo.className = 'date-info';
-                    headerDateInfo.textContent = `Last Shortcut: ${new Date(mostRecentShortcutTime).toLocaleString()}`;
-                    header.appendChild(headerDateInfo);
-                }
-
-                canvasElements.push(header);
 
                 const projectVideoFiles = [];
                 // Recursively find videos in subfolders
@@ -1285,9 +1293,30 @@
                     return acc;
                 }, {});
 
-                let videoNames = Object.keys(groupedFiles);
-                const videoFileMap = new Map(allVideoFiles.map(f => [f.name.substring(0, f.name.lastIndexOf('.')), f]));
+                const videoFileMap = new Map(projectVideoFiles.map(f => [f.name.substring(0, f.name.lastIndexOf('.')), f]));
 
+                let projectImageCount = 0;
+                for (const [vName, vFiles] of Object.entries(groupedFiles)) {
+                    if (videoFileMap.has(vName)) {
+                        projectImageCount += vFiles.length;
+                    }
+                }
+
+                const header = document.createElement('h2');
+                header.className = 'project-header';
+                const headerText = document.createElement('span');
+                headerText.textContent = `${project.name} (${projectImageCount} images)`;
+                header.appendChild(headerText);
+
+                if (isNewOnly) {
+                    const headerDateInfo = document.createElement('span');
+                    headerDateInfo.className = 'date-info';
+                    headerDateInfo.textContent = `Last Shortcut: ${new Date(mostRecentShortcutTime).toLocaleString()}`;
+                    header.appendChild(headerDateInfo);
+                }
+                canvasElements.push(header);
+
+                let videoNames = Object.keys(groupedFiles);
                 let addedRows = 0;
                 videoNames.sort((a, b) => {
                     if (sortBy === 'name-asc') return a.localeCompare(b);
@@ -1317,10 +1346,14 @@
                     if (!videoFile) continue;
 
                     addedRows++;
-                    const dateInfo = document.createElement('span');
+                    const dateInfo = document.createElement('div');
                     dateInfo.className = 'date-info';
                     dateInfo.textContent = `Created: ${new Date(videoFile.lastModified).toLocaleString()}`;
                     rowDiv.appendChild(dateInfo);
+
+                    const thumbnailsContainer = document.createElement('div');
+                    thumbnailsContainer.className = 'thumbnails-container';
+                    rowDiv.appendChild(thumbnailsContainer);
 
                     const hasProjectSc = checkShortcut(videoFile.name, projectScData);
                     const hasRootSc = checkShortcut(videoFile.name, rootProjectShortcutsSet);
@@ -1378,7 +1411,7 @@
                         if (initialShortcutType) {
                             img.classList.add('selected-' + initialShortcutType);
                         }
-                        rowDiv.appendChild(img);
+                        thumbnailsContainer.appendChild(img);
                         
                         const promise = new Promise((resolve, reject) => {
                             img.onload = () => {
@@ -1491,6 +1524,8 @@
                 header.textContent = projectData.handle.name;
                 canvasElements.push(header);
 
+                let projectImageCount = 0;
+
                 for (const videoInfo of projectData.videos) {
                     try {
                         const editDirHandle = await findDirectoryHandleByName(projectData.handle, 'Edit Thumbnails');
@@ -1512,6 +1547,15 @@
                         rowDiv.dataset.videoName = videoInfo.videoName;
                         rowDiv.dataset.projectPath = projectPath;
                         
+                        const dateInfo = document.createElement('div');
+                        dateInfo.className = 'date-info';
+                        dateInfo.textContent = `Created: ${new Date(videoInfo.videoFile.lastModified).toLocaleString()}`;
+                        rowDiv.appendChild(dateInfo);
+
+                        const thumbnailsContainer = document.createElement('div');
+                        thumbnailsContainer.className = 'thumbnails-container';
+                        rowDiv.appendChild(thumbnailsContainer);
+
                         const selectionData = { 
                             videoName: videoInfo.videoFile.name, 
                             projectPath: projectPath,
@@ -1533,11 +1577,13 @@
                             }
                         });
 
+                        projectImageCount += files.length;
+
                         files.forEach(file => {
                             const img = new Image();
                             img.className = 'thumbnail';
                             img.dataset.fileName = file.name;
-                            rowDiv.appendChild(img);
+                            thumbnailsContainer.appendChild(img);
 
                             const promise = new Promise((resolve, reject) => {
                                 img.onload = () => {
@@ -1560,6 +1606,7 @@
                         canvasElements.push(errorDiv);
                     }
                 }
+                header.textContent = `${projectData.handle.name} (${projectImageCount} images)`;
                 const hr = document.createElement('hr');
                 canvasElements.push(hr);
                 canvases.set(canvasId, { id: canvasId, name: projectData.handle.name, elements: canvasElements, path: projectPath });
@@ -1621,6 +1668,8 @@
                     header.textContent = subfolderName;
                     canvasElements.push(header);
 
+                    let projectImageCount = 0;
+
                     for (const shortcutFileName of shortcutFileNames) {
                         const videoBaseName = shortcutFileName.slice(0, -4);
                         const videoNameWithoutExt = videoBaseName.substring(0, videoBaseName.lastIndexOf('.'));
@@ -1639,10 +1688,31 @@
                                 return aNum - bNum;
                             });
 
+                            let videoDate = 'Unknown';
+                            try {
+                                for await (const entry of subfolderHandle.values()) {
+                                    if (entry.kind === 'file' && entry.name.startsWith(videoBaseName)) {
+                                        const file = await entry.getFile();
+                                        videoDate = new Date(file.lastModified).toLocaleString();
+                                        break;
+                                    }
+                                }
+                            } catch (e) {}
+
                             const rowDiv = document.createElement('div');
                             rowDiv.className = 'landscape-row';
                             rowDiv.dataset.videoName = videoBaseName;
                             rowDiv.dataset.projectPath = subfolderName;
+
+                            const dateInfo = document.createElement('div');
+                            dateInfo.className = 'date-info';
+                            dateInfo.textContent = `Created: ${videoDate}`;
+                            rowDiv.appendChild(dateInfo);
+
+                            const thumbnailsContainer = document.createElement('div');
+                            thumbnailsContainer.className = 'thumbnails-container';
+                            rowDiv.appendChild(thumbnailsContainer);
+
                             canvasElements.push(rowDiv);
 
                              rowDiv.addEventListener('click', () => {
@@ -1656,11 +1726,12 @@
                                 }
                             });
 
+                             projectImageCount += landscapeFiles.length;
                              landscapeFiles.forEach(file => {
                                 const img = new Image();
                                 img.className = 'thumbnail';
                                 img.dataset.fileName = file.name;
-                                rowDiv.appendChild(img);
+                                thumbnailsContainer.appendChild(img);
                                 const promise = new Promise((resolve, reject) => {
                                     img.onload = () => {
                                         img.dataset.originalWidth = img.width;
@@ -1676,6 +1747,7 @@
                             });
                         }
                     }
+                    header.textContent = `${subfolderName} (${projectImageCount} images)`;
                      if (canvasElements.length > 1) { // Only add if there are more than just the header
                         canvases.set(canvasId, { id: canvasId, name: subfolderName, elements: canvasElements, path: subfolderName });
                     }
@@ -1781,6 +1853,8 @@
 
                     videoFiles.sort((a, b) => a.name.localeCompare(b.name));
                     const firstVideo = videoFiles[0];
+                    const firstVideoFile = await firstVideo.getFile();
+                    const videoDate = new Date(firstVideoFile.lastModified).toLocaleString();
                     const videoBaseName = firstVideo.name.substring(0, firstVideo.name.lastIndexOf('.'));
 
                     const editDirHandle = await project.handle.getDirectoryHandle('Edit Thumbnails');
@@ -1801,12 +1875,22 @@
 
                     const header = document.createElement('h2');
                     header.className = 'project-header';
-                    header.textContent = project.name;
+                    header.textContent = `${project.name} (${thumbnailFiles.length} images)`;
                     canvasElements.push(header);
 
                     const rowDiv = document.createElement('div');
                     rowDiv.className = 'landscape-row';
                     rowDiv.dataset.projectPath = project.path;
+
+                    const dateInfo = document.createElement('div');
+                    dateInfo.className = 'date-info';
+                    dateInfo.textContent = `Created: ${videoDate}`;
+                    rowDiv.appendChild(dateInfo);
+
+                    const thumbnailsContainer = document.createElement('div');
+                    thumbnailsContainer.className = 'thumbnails-container';
+                    rowDiv.appendChild(thumbnailsContainer);
+
                     canvasElements.push(rowDiv);
 
                     rowDiv.addEventListener('click', () => {
@@ -1831,7 +1915,7 @@
                         const img = new Image();
                         img.className = 'thumbnail';
                         img.dataset.projectPath = project.path;
-                        rowDiv.appendChild(img);
+                        thumbnailsContainer.appendChild(img);
 
                         const promise = new Promise((resolve, reject) => {
                             img.onload = () => {
@@ -1958,6 +2042,8 @@
                 header.textContent = subfolder;
                 canvasElements.push(header);
 
+                let projectImageCount = 0;
+
                 let subfolderHandle;
                 try {
                     subfolderHandle = await currentDirHandle.getDirectoryHandle(subfolder);
@@ -1976,10 +2062,30 @@
 
                 for (const shortcutFile of shortcutFiles) {
                     const videoBaseName = shortcutFile.substring(0, shortcutFile.lastIndexOf('.'));
+
+                    let videoDate = 'Unknown';
+                    try {
+                        for await (const entry of subfolderHandle.values()) {
+                            if (entry.kind === 'file' && entry.name.toLowerCase().startsWith(videoBaseName.toLowerCase())) {
+                                const file = await entry.getFile();
+                                videoDate = new Date(file.lastModified).toLocaleString();
+                                break;
+                            }
+                        }
+                    } catch (e) {}
                     
                     const rowDiv = document.createElement('div');
                     rowDiv.className = 'landscape-row';
                     rowDiv.dataset.shortcutName = shortcutFile + '.lnk';
+
+                    const dateInfo = document.createElement('div');
+                    dateInfo.className = 'date-info';
+                    dateInfo.textContent = `Created: ${videoDate}`;
+                    rowDiv.appendChild(dateInfo);
+
+                    const thumbnailsContainer = document.createElement('div');
+                    thumbnailsContainer.className = 'thumbnails-container';
+                    rowDiv.appendChild(thumbnailsContainer);
 
                     const thumbnailFiles = [];
                     try {
@@ -1996,6 +2102,7 @@
                     if (thumbnailFiles.length > 0) {
                         canvasElements.push(rowDiv); // Only add the row if thumbnails were found
 
+                        projectImageCount += thumbnailFiles.length;
                         thumbnailFiles.sort((a, b) => {
                             const aNum = parseInt(a.name.substring(a.name.lastIndexOf('_') + 1));
                             const bNum = parseInt(b.name.substring(b.name.lastIndexOf('_') + 1));
@@ -2022,7 +2129,7 @@
                             const url = URL.createObjectURL(file);
                             createdObjectUrls.push(url);
                             img.src = url;
-                            rowDiv.appendChild(img);
+                            thumbnailsContainer.appendChild(img);
 
                             const promise = new Promise((resolve) => {
                                 img.onload = () => {
@@ -2040,6 +2147,7 @@
                     }
                 }
 
+                header.textContent = `${subfolder} (${projectImageCount} images)`;
                 if (canvasElements.length > 1) { // More than just the header
                     canvases.set(canvasId, { id: canvasId, name: subfolder, elements: canvasElements, path: subfolder });
                 }
