@@ -1129,41 +1129,62 @@
             
             const projectFolders = [];
 
-            async function findProjectFolders(dirHandle, currentPath = '', inheritedTimestamp = 0) {
-                 const localTimestamp = isNewOnly ? await getTimestamp(dirHandle) : 0;
-                 const currentEffectiveTimestamp = Math.max(inheritedTimestamp, localTimestamp || 0);
-
-                 for await (const entry of dirHandle.values()) {
+            if (isNewOnly) {
+                // Logic from scbu.html for "latest videos"
+                for await (const entry of currentDirHandle.values()) {
                     if (entry.kind === 'directory') {
-                        const newPath = currentPath ? `${currentPath}\\${entry.name}` : entry.name;
-                        try {
-                            await findDirectoryHandleByName(entry, 'Edit Thumbnails');
-                            const projectLocalTimestamp = isNewOnly ? await getTimestamp(entry) : 0;
-                            const finalTimestamp = Math.max(currentEffectiveTimestamp, projectLocalTimestamp || 0);
-                            projectFolders.push({ 
-                                handle: entry, 
-                                path: newPath, 
-                                name: entry.name,
-                                timestamp: finalTimestamp 
-                            });
-                        } catch (e) {
-                           await findProjectFolders(entry, newPath, currentEffectiveTimestamp);
+                        const subfolderScTimestamp = await getTimestamp(entry);
+                        let mostRecentShortcutTime;
+                        if (subfolderScTimestamp === null) {
+                            mostRecentShortcutTime = 0;
+                        } else {
+                            mostRecentShortcutTime = Math.max(rootScTimestamp, subfolderScTimestamp);
+                        }
+                        projectFolders.push({
+                            handle: entry,
+                            path: entry.name,
+                            name: entry.name,
+                            timestamp: mostRecentShortcutTime
+                        });
+                    }
+                }
+            } else {
+                async function findProjectFolders(dirHandle, currentPath = '', inheritedTimestamp = 0) {
+                     const localTimestamp = isNewOnly ? await getTimestamp(dirHandle) : 0;
+                     const currentEffectiveTimestamp = Math.max(inheritedTimestamp, localTimestamp || 0);
+
+                     for await (const entry of dirHandle.values()) {
+                        if (entry.kind === 'directory') {
+                            const newPath = currentPath ? `${currentPath}\\${entry.name}` : entry.name;
+                            try {
+                                await findDirectoryHandleByName(entry, 'Edit Thumbnails');
+                                const projectLocalTimestamp = isNewOnly ? await getTimestamp(entry) : 0;
+                                const finalTimestamp = Math.max(currentEffectiveTimestamp, projectLocalTimestamp || 0);
+                                projectFolders.push({
+                                    handle: entry,
+                                    path: newPath,
+                                    name: entry.name,
+                                    timestamp: finalTimestamp
+                                });
+                            } catch (e) {
+                               await findProjectFolders(entry, newPath, currentEffectiveTimestamp);
+                            }
                         }
                     }
                 }
-            }
-            
-            try {
-                await findDirectoryHandleByName(currentDirHandle, 'Edit Thumbnails');
-                const projectLocalTimestamp = isNewOnly ? await getTimestamp(currentDirHandle) : 0;
-                projectFolders.push({ 
-                    handle: currentDirHandle, 
-                    path: '', 
-                    name: currentDirHandle.name,
-                    timestamp: Math.max(rootScTimestamp, projectLocalTimestamp || 0)
-                });
-            } catch (e) {
-                await findProjectFolders(currentDirHandle, '', rootScTimestamp);
+
+                try {
+                    await findDirectoryHandleByName(currentDirHandle, 'Edit Thumbnails');
+                    const projectLocalTimestamp = isNewOnly ? await getTimestamp(currentDirHandle) : 0;
+                    projectFolders.push({
+                        handle: currentDirHandle,
+                        path: '',
+                        name: currentDirHandle.name,
+                        timestamp: Math.max(rootScTimestamp, projectLocalTimestamp || 0)
+                    });
+                } catch (e) {
+                    await findProjectFolders(currentDirHandle, '', rootScTimestamp);
+                }
             }
 
             projectFolders.sort((a, b) => a.name.localeCompare(b.name));
@@ -1206,6 +1227,16 @@
             const allImageLoadPromises = [];
             for (const project of projectFolders) {
                 console.log(`Processing project: ${project.name} (Path: ${project.path})`);
+
+                if (isNewOnly) {
+                    try {
+                        await findDirectoryHandleByName(project.handle, 'Edit Thumbnails');
+                    } catch (e) {
+                        console.warn(`'Edit Thumbnails' directory not found in project '${project.name}'. Skipping.`);
+                        continue;
+                    }
+                }
+
                 const projectScData = await getScDataForProject(project.handle);
                 
                 const normalizedProjectName = normalizeProjectKey(project.name);
@@ -1262,17 +1293,25 @@
                 allVideoFiles.push(...projectVideoFiles);
 
                 const editDirHandle = await findDirectoryHandleByName(project.handle, 'Edit Thumbnails');
+
+                const validVideoNames = new Set(
+                    projectVideoFiles.map(v => v.name.slice(0, v.name.lastIndexOf('.')).toLowerCase())
+                );
+
                 const landscapeFiles = [];
                  for await (const entry of editDirHandle.values()) {
                     if (entry.kind === 'file' && entry.name.match(/\.(jpe?g|png|gif|webp)$/i)) {
-                        landscapeFiles.push(await entry.getFile());
+                        const base = entry.name.replace(/_\d+\.[^.]+$/, '').toLowerCase();
+                        if (validVideoNames.has(base)) {
+                            landscapeFiles.push(await entry.getFile());
+                        }
                     }
                 }
 
                 const groupedFiles = landscapeFiles.reduce((acc, file) => {
                     const match = file.name.match(/^(.*?)_(\d+)\.[^.]+$/);
                     if (match) {
-                        const videoName = match[1];
+                        const videoName = match[1].toLowerCase();
                         if (!acc[videoName]) acc[videoName] = [];
                         acc[videoName].push(file);
                     }
@@ -1280,7 +1319,7 @@
                 }, {});
 
                 let videoNames = Object.keys(groupedFiles);
-                const videoFileMap = new Map(allVideoFiles.map(f => [f.name.substring(0, f.name.lastIndexOf('.')), f]));
+                const videoFileMap = new Map(projectVideoFiles.map(f => [f.name.slice(0, f.name.lastIndexOf('.')).toLowerCase(), f]));
 
                 videoNames.sort((a, b) => {
                     if (sortBy === 'name-asc') return a.localeCompare(b);
