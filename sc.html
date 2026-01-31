@@ -965,8 +965,24 @@
                 scriptLines.push('');
             });
 
+            const timestamp = new Date().toISOString();
+
+            if (selectedProjectPaths.size > 0) {
+                scriptLines.push('# --- Placing Genuine Timestamps ---');
+
+                selectedProjectPaths.forEach(projectPath => {
+                    const escapedProjectPath = escapePSString(projectPath);
+                    const projectPathVar = projectPath ? `Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}'` : '$PSScriptRoot';
+
+                    scriptLines.push(`Write-Host "Placing genuine timestamp for project: ${projectPath || '(Root)'}"`);
+                    scriptLines.push(`$projectFolder = ${projectPathVar}`);
+                    scriptLines.push(`$scDateFile = Join-Path -Path $projectFolder -ChildPath 'scdate.txt'`);
+                    scriptLines.push(`Set-Content -Path $scDateFile -Value "${timestamp}"`);
+                    scriptLines.push('');
+                });
+            }
+
             if (dummyTimestampProjects.size > 0) {
-                const timestamp = new Date().toISOString();
                 scriptLines.push('# --- Placing Dummy Timestamps ---');
                 
                 dummyTimestampProjects.forEach(projectPath => {
@@ -1219,7 +1235,7 @@
                     isProject = true;
                 } catch (e) {}
 
-                if (isProject || projectFolders.length > 0) {
+                if (!isNewOnly && (isProject || projectFolders.length > 0)) {
                     if (confirm("Would you like to select the root folder to enable root shortcut detection?")) {
                         try {
                             const rootHandle = await window.showDirectoryPicker();
@@ -1295,17 +1311,17 @@
 
                 const videoFileMap = new Map(projectVideoFiles.map(f => [f.name.substring(0, f.name.lastIndexOf('.')), f]));
 
-                let projectImageCount = 0;
-                for (const [vName, vFiles] of Object.entries(groupedFiles)) {
+                let projectVideoCount = 0;
+                for (const vName of Object.keys(groupedFiles)) {
                     if (videoFileMap.has(vName)) {
-                        projectImageCount += vFiles.length;
+                        projectVideoCount++;
                     }
                 }
 
                 const header = document.createElement('h2');
                 header.className = 'project-header';
                 const headerText = document.createElement('span');
-                headerText.textContent = `${project.name} (${projectImageCount} images)`;
+                headerText.textContent = `${project.name} (${projectVideoCount} ${projectVideoCount === 1 ? 'video' : 'videos'})`;
                 header.appendChild(headerText);
 
                 if (isNewOnly) {
@@ -1524,7 +1540,7 @@
                 header.textContent = projectData.handle.name;
                 canvasElements.push(header);
 
-                let projectImageCount = 0;
+                let projectVideoCount = 0;
 
                 for (const videoInfo of projectData.videos) {
                     try {
@@ -1577,7 +1593,7 @@
                             }
                         });
 
-                        projectImageCount += files.length;
+                        projectVideoCount++;
 
                         files.forEach(file => {
                             const img = new Image();
@@ -1606,7 +1622,7 @@
                         canvasElements.push(errorDiv);
                     }
                 }
-                header.textContent = `${projectData.handle.name} (${projectImageCount} images)`;
+                header.textContent = `${projectData.handle.name} (${projectVideoCount} ${projectVideoCount === 1 ? 'video' : 'videos'})`;
                 const hr = document.createElement('hr');
                 canvasElements.push(hr);
                 canvases.set(canvasId, { id: canvasId, name: projectData.handle.name, elements: canvasElements, path: projectPath });
@@ -1668,7 +1684,7 @@
                     header.textContent = subfolderName;
                     canvasElements.push(header);
 
-                    let projectImageCount = 0;
+                    let projectVideoCount = 0;
 
                     for (const shortcutFileName of shortcutFileNames) {
                         const videoBaseName = shortcutFileName.slice(0, -4);
@@ -1726,7 +1742,7 @@
                                 }
                             });
 
-                             projectImageCount += landscapeFiles.length;
+                             projectVideoCount++;
                              landscapeFiles.forEach(file => {
                                 const img = new Image();
                                 img.className = 'thumbnail';
@@ -1747,7 +1763,7 @@
                             });
                         }
                     }
-                    header.textContent = `${subfolderName} (${projectImageCount} images)`;
+                    header.textContent = `${subfolderName} (${projectVideoCount} ${projectVideoCount === 1 ? 'video' : 'videos'})`;
                      if (canvasElements.length > 1) { // Only add if there are more than just the header
                         canvases.set(canvasId, { id: canvasId, name: subfolderName, elements: canvasElements, path: subfolderName });
                     }
@@ -1875,7 +1891,7 @@
 
                     const header = document.createElement('h2');
                     header.className = 'project-header';
-                    header.textContent = `${project.name} (${thumbnailFiles.length} images)`;
+                    header.textContent = `${project.name} (1 video)`;
                     canvasElements.push(header);
 
                     const rowDiv = document.createElement('div');
@@ -2042,7 +2058,7 @@
                 header.textContent = subfolder;
                 canvasElements.push(header);
 
-                let projectImageCount = 0;
+                let projectVideoCount = 0;
 
                 let subfolderHandle;
                 try {
@@ -2102,7 +2118,7 @@
                     if (thumbnailFiles.length > 0) {
                         canvasElements.push(rowDiv); // Only add the row if thumbnails were found
 
-                        projectImageCount += thumbnailFiles.length;
+                        projectVideoCount++;
                         thumbnailFiles.sort((a, b) => {
                             const aNum = parseInt(a.name.substring(a.name.lastIndexOf('_') + 1));
                             const bNum = parseInt(b.name.substring(b.name.lastIndexOf('_') + 1));
@@ -2147,7 +2163,7 @@
                     }
                 }
 
-                header.textContent = `${subfolder} (${projectImageCount} images)`;
+                header.textContent = `${subfolder} (${projectVideoCount} ${projectVideoCount === 1 ? 'video' : 'videos'})`;
                 if (canvasElements.length > 1) { // More than just the header
                     canvases.set(canvasId, { id: canvasId, name: subfolder, elements: canvasElements, path: subfolder });
                 }
