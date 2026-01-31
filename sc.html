@@ -462,6 +462,7 @@
         let allVideoFiles = [];
         let allProjectFolders = [];
         let shortcutSelections = new Map(); // Key: projectPath + '|' + videoName, Value: { videoName, projectPath, subfolder, type }
+        let initialShortcutSelections = new Map(); // Key: projectPath + '|' + videoName, Value: { type }
         let currentDirHandle;
         let g_rootHandle;
         let currentMode = '';
@@ -586,7 +587,7 @@
                     currentDirHandle = dirHandle;
                     currentMode = 'sc';
                     setVisibilityForMode(currentMode);
-                    await renderScMode();
+                    await renderVideosInternal(false, sortSelector.value, true);
                 } catch (err) {
                     if (err.name !== 'AbortError') {
                         console.error('Failed to open directory or render SC mode:', err);
@@ -658,23 +659,18 @@
                     } else if (currentMode === 'latest-videos') {
                         renderLatestVideosMode(e.target.value);
                     } else if (currentMode === 'sc') {
-                        renderScGroup(parseInt(groupSelector.value, 10), e.target.value);
+                        renderVideosInternal(false, e.target.value, true);
                     }
                 }
-            });
-            
-            groupSelector.addEventListener('change', async (e) => {
-                const groupIndex = parseInt(e.target.value, 10);
-                await renderScGroup(groupIndex, sortSelector.value);
             });
 
             loadRootScButton.addEventListener('click', async () => {
                 try {
                     const dirHandle = await window.showDirectoryPicker();
                     currentDirHandle = dirHandle;
-                    currentMode = 'root-sc';
+                    currentMode = 'sc';
                     setVisibilityForMode(currentMode);
-                    await renderRootScMode();
+                    await renderVideosInternal(false, sortSelector.value, true);
                 } catch (err) {
                     if (err.name !== 'AbortError') {
                         console.error('Failed to open directory or render Root SC mode:', err);
@@ -825,7 +821,7 @@
 
             checkboxContainers.forEach(el => el.style.display = 'flex');
             canvasSelect.style.display = (isDirectory || isSc || isScNew || isLatestVideos || isRootSc || isPlaylist) ? 'inline-block' : 'none';
-            groupSelector.style.display = isSc ? 'inline-block' : 'none';
+            groupSelector.style.display = 'none';
 
             const showSelectionButtons = isLatestVideos || isPlaylist || isDirectory;
             rootScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
@@ -964,6 +960,39 @@
                 }
                 scriptLines.push('');
             });
+
+            // --- Deletions ---
+            const deletions = [];
+            initialShortcutSelections.forEach((initial, key) => {
+                const current = shortcutSelections.get(key);
+                const parts = key.split('|');
+                const projectPath = parts[0];
+                const videoName = parts[1];
+                const escapedVideoName = escapePSString(videoName);
+                const escapedProjectPath = escapePSString(projectPath);
+
+                const initiallyInSubfolder = initial.type === 'subfolder-sc' || initial.type === 'both-sc';
+                const currentlyInSubfolder = current && (current.type === 'subfolder-sc' || current.type === 'both-sc');
+                if (initiallyInSubfolder && !currentlyInSubfolder) {
+                    const subfolderScPath = `(Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}') -ChildPath 'sc')`;
+                    const fullScPath = `(Join-Path -Path ${subfolderScPath} -ChildPath ('${escapedVideoName}' + '.lnk'))`;
+                    deletions.push(`if (Test-Path -LiteralPath ${fullScPath}) { Remove-Item -LiteralPath ${fullScPath}; Write-Host "Deleted subfolder shortcut: ${escapedProjectPath}\\${escapedVideoName}" }`);
+                }
+
+                const initiallyInRoot = initial.type === 'root-sc' || initial.type === 'both-sc';
+                const currentlyInRoot = current && (current.type === 'root-sc' || current.type === 'both-sc');
+                if (initiallyInRoot && !currentlyInRoot) {
+                    const rootScFolder = `(Join-Path -Path $PSScriptRoot -ChildPath 'sc')`;
+                    const fullScPath = `(Join-Path -Path ${rootScFolder} -ChildPath ('${escapedVideoName}' + '.lnk'))`;
+                    deletions.push(`if (Test-Path -LiteralPath ${fullScPath}) { Remove-Item -LiteralPath ${fullScPath}; Write-Host "Deleted root shortcut: ${escapedVideoName}" }`);
+                }
+            });
+
+            if (deletions.length > 0) {
+                scriptLines.push('# --- Deleting Shortcuts ---');
+                scriptLines.push(...deletions);
+                scriptLines.push('');
+            }
 
             const timestamp = new Date().toISOString();
 
@@ -1143,19 +1172,20 @@
         }
 
         async function renderDirectoryMode(sortBy = 'name-asc') {
-            await renderVideosInternal(false, sortBy);
+            await renderVideosInternal(false, sortBy, false);
         }
 
         async function renderLatestVideosMode(sortBy = 'name-asc') {
-            await renderVideosInternal(true, sortBy);
+            await renderVideosInternal(true, sortBy, false);
         }
 
-        async function renderVideosInternal(isNewOnly = false, sortBy = 'name-asc') {
-            console.log(`Starting renderVideosInternal (isNewOnly=${isNewOnly})`);
+        async function renderVideosInternal(isNewOnly = false, sortBy = 'name-asc', isShortcutsOnly = false) {
+            console.log(`Starting renderVideosInternal (isNewOnly=${isNewOnly}, isShortcutsOnly=${isShortcutsOnly})`);
             createdObjectUrls.forEach(URL.revokeObjectURL);
             createdObjectUrls = [];
             canvases.clear();
             shortcutSelections.clear();
+            if (isShortcutsOnly) initialShortcutSelections.clear();
             thumbnailContainer.innerHTML = '';
             allVideoFiles = [];
 
@@ -1312,8 +1342,15 @@
                 const videoFileMap = new Map(projectVideoFiles.map(f => [f.name.substring(0, f.name.lastIndexOf('.')), f]));
 
                 let projectVideoCount = 0;
+                const hasAnyShortcuts = projectScData.size > 0 || rootProjectShortcutsSet.size > 0;
                 for (const vName of Object.keys(groupedFiles)) {
                     if (videoFileMap.has(vName)) {
+                        if (isShortcutsOnly && hasAnyShortcuts) {
+                            const vFile = videoFileMap.get(vName);
+                            if (!checkShortcut(vFile.name, projectScData) && !checkShortcut(vFile.name, rootProjectShortcutsSet)) {
+                                continue;
+                            }
+                        }
                         projectVideoCount++;
                     }
                 }
@@ -1361,6 +1398,13 @@
                     const videoFile = videoFileMap.get(videoName);
                     if (!videoFile) continue;
 
+                    const hasProjectSc = checkShortcut(videoFile.name, projectScData);
+                    const hasRootSc = checkShortcut(videoFile.name, rootProjectShortcutsSet);
+
+                    if (isShortcutsOnly && hasAnyShortcuts && !hasProjectSc && !hasRootSc) {
+                        continue;
+                    }
+
                     addedRows++;
                     const dateInfo = document.createElement('div');
                     dateInfo.className = 'date-info';
@@ -1371,9 +1415,6 @@
                     thumbnailsContainer.className = 'thumbnails-container';
                     rowDiv.appendChild(thumbnailsContainer);
 
-                    const hasProjectSc = checkShortcut(videoFile.name, projectScData);
-                    const hasRootSc = checkShortcut(videoFile.name, rootProjectShortcutsSet);
-                    
                     if (hasProjectSc) console.log(`Match found in project scdata for: ${videoFile.name}`);
                     if (hasRootSc) console.log(`Match found in root scdata for: ${videoFile.name}`);
 
@@ -1384,12 +1425,14 @@
 
                     if (initialShortcutType) {
                         const key = project.path + '|' + videoFile.name;
-                        shortcutSelections.set(key, { 
+                        const selectionData = {
                             videoName: videoFile.name, 
                             projectPath: project.path,
                             subfolder: videoFile.subfolder,
                             type: initialShortcutType
-                        });
+                        };
+                        shortcutSelections.set(key, selectionData);
+                        initialShortcutSelections.set(key, { type: initialShortcutType });
                     }
 
                     canvasElements.push(rowDiv);
@@ -1459,184 +1502,6 @@
             }
         }
 
-        function populateGroupSelector() {
-            groupSelector.innerHTML = '';
-            const groupCount = Math.ceil(allProjectFolders.length / 10);
-            for (let i = 0; i < groupCount; i++) {
-                const option = document.createElement('option');
-                option.value = i;
-                option.textContent = `Group ${i + 1}`;
-                groupSelector.appendChild(option);
-            }
-        }
-
-        async function renderScGroup(groupIndex = 0, sortBy = 'name-asc') {
-            const start = groupIndex * 10;
-            const end = start + 10;
-            const projectsToRender = allProjectFolders.slice(start, end);
-
-            canvases.clear();
-            createdObjectUrls.forEach(URL.revokeObjectURL);
-            createdObjectUrls = [];
-
-            const videoExtensionRegex = /\.(mp4|avi|mov|mkv)$/i;
-            const displayableProjects = new Map();
-
-            async function findVideosInDirectory(dirHandle) {
-                const videoFiles = [];
-                for await (const fileEntry of dirHandle.values()) {
-                    if (fileEntry.kind === 'file' && fileEntry.name.match(videoExtensionRegex)) {
-                        videoFiles.push(await fileEntry.getFile());
-                    }
-                }
-                return videoFiles;
-            }
-
-            for (const project of projectsToRender) {
-                const scdataHandle = await project.handle.getFileHandle('scdata.txt');
-                const scdata = await (await scdataHandle.getFile()).text();
-                const videoFiles = await findVideosInDirectory(project.handle);
-
-                const shortcutFileNames = scdata.split('\n')
-                    .map(line => line.trim())
-                    .filter(line => line.length > 0)
-                    .map(name => name.replace(/^'|'$/g, '').replace(/\.lnk$/, ''));
-
-                const videosInProject = [];
-                videoFiles.forEach(videoFile => {
-                    const videoFileBaseName = videoFile.name.replace(videoExtensionRegex, '');
-                    if (shortcutFileNames.some(name => name.startsWith(videoFileBaseName))) {
-                        videosInProject.push({
-                            videoFile: videoFile,
-                            videoName: videoFile.name,
-                        });
-                    }
-                });
-
-                if (videosInProject.length > 0) {
-                    videosInProject.sort((a, b) => {
-                        if (sortBy === 'name-asc') return a.videoName.localeCompare(b.videoName);
-                        if (sortBy === 'name-desc') return b.videoName.localeCompare(a.videoName);
-                        const dateA = a.videoFile.lastModified;
-                        const dateB = b.videoFile.lastModified;
-                        if (sortBy === 'date-new') return dateB - dateA;
-                        if (sortBy === 'date-old') return dateA - dateB;
-                        return 0;
-                    });
-                    displayableProjects.set(project.path, {
-                        handle: project.handle,
-                        videos: videosInProject
-                    });
-                }
-            }
-            
-            const allImageLoadPromises = [];
-            for (const [projectPath, projectData] of displayableProjects.entries()) {
-                const canvasId = getNextCanvasId();
-                const canvasElements = [];
-
-                const header = document.createElement('h2');
-                header.className = 'project-header';
-                header.textContent = projectData.handle.name;
-                canvasElements.push(header);
-
-                let projectVideoCount = 0;
-
-                for (const videoInfo of projectData.videos) {
-                    try {
-                        const editDirHandle = await findDirectoryHandleByName(projectData.handle, 'Edit Thumbnails');
-                        const landscapeFiles = [];
-                        for await (const entry of editDirHandle.values()) {
-                            if (entry.kind === 'file' && entry.name.startsWith(videoInfo.videoName.substring(0, videoInfo.videoName.lastIndexOf('.')))) {
-                                landscapeFiles.push(await entry.getFile());
-                            }
-                        }
-
-                        const files = landscapeFiles.sort((a, b) => {
-                            const aNum = parseInt(a.name.substring(a.name.lastIndexOf('_') + 1));
-                            const bNum = parseInt(b.name.substring(b.name.lastIndexOf('_') + 1));
-                            return aNum - bNum;
-                        });
-
-                        const rowDiv = document.createElement('div');
-                        rowDiv.className = 'landscape-row';
-                        rowDiv.dataset.videoName = videoInfo.videoName;
-                        rowDiv.dataset.projectPath = projectPath;
-                        
-                        const dateInfo = document.createElement('div');
-                        dateInfo.className = 'date-info';
-                        dateInfo.textContent = `Created: ${new Date(videoInfo.videoFile.lastModified).toLocaleString()}`;
-                        rowDiv.appendChild(dateInfo);
-
-                        const thumbnailsContainer = document.createElement('div');
-                        thumbnailsContainer.className = 'thumbnails-container';
-                        rowDiv.appendChild(thumbnailsContainer);
-
-                        const selectionData = { 
-                            videoName: videoInfo.videoFile.name, 
-                            projectPath: projectPath,
-                            subfolder: videoInfo.videoFile.subfolder
-                        };
-                        const key = projectPath + '|' + videoInfo.videoFile.name;
-                        if (shortcutSelections.has(key)) {
-                            rowDiv.classList.add('selected-shortcut');
-                        }
-
-                        canvasElements.push(rowDiv);
-
-                        rowDiv.addEventListener('click', () => {
-                            rowDiv.classList.toggle('selected-shortcut');
-                            if (shortcutSelections.has(key)) {
-                                shortcutSelections.delete(key);
-                            } else {
-                                shortcutSelections.set(key, selectionData);
-                            }
-                        });
-
-                        projectVideoCount++;
-
-                        files.forEach(file => {
-                            const img = new Image();
-                            img.className = 'thumbnail';
-                            img.dataset.fileName = file.name;
-                            thumbnailsContainer.appendChild(img);
-
-                            const promise = new Promise((resolve, reject) => {
-                                img.onload = () => {
-                                    img.dataset.originalWidth = img.width;
-                                    img.dataset.originalHeight = img.height;
-                                    resolve();
-                                };
-                                img.onerror = reject;
-                            });
-
-                            const url = URL.createObjectURL(file);
-                            createdObjectUrls.push(url);
-                            img.src = url;
-                            allImageLoadPromises.push(promise);
-                        });
-                    } catch (e) {
-                        const errorDiv = document.createElement('div');
-                        errorDiv.textContent = `Error: Could not find or access 'Edit Thumbnails' directory in project: ${projectData.handle.name}`;
-                        errorDiv.style.color = 'red';
-                        canvasElements.push(errorDiv);
-                    }
-                }
-                header.textContent = `${projectData.handle.name} (${projectVideoCount} ${projectVideoCount === 1 ? 'video' : 'videos'})`;
-                const hr = document.createElement('hr');
-                canvasElements.push(hr);
-                canvases.set(canvasId, { id: canvasId, name: projectData.handle.name, elements: canvasElements, path: projectPath });
-            }
-            
-            await Promise.all(allImageLoadPromises);
-            
-             if (canvases.size > 0) {
-                renderCanvas(canvases.keys().next().value);
-            } else {
-                populateCanvasDropdown();
-                thumbnailContainer.innerHTML = '';
-            }
-        }
 
         async function renderScNewMode() {
             console.log("--- Starting renderScNewMode (v2) ---");
@@ -1784,50 +1649,6 @@
             }
         }
 
-        async function renderScMode(sortBy = 'name-asc') {
-            createdObjectUrls.forEach(URL.revokeObjectURL);
-            createdObjectUrls = [];
-            canvases.clear();
-            allProjectFolders = [];
-
-            const discoveredProjects = [];
-
-            async function findScDataFiles(dirHandle, currentPath = '') {
-                try {
-                    await dirHandle.getFileHandle('scdata.txt');
-                    discoveredProjects.push({
-                        handle: dirHandle,
-                        path: currentPath,
-                        name: dirHandle.name
-                    });
-                } catch (e) {
-                    // Not a project folder.
-                }
-
-                for await (const entry of dirHandle.values()) {
-                    if (entry.kind === 'directory') {
-                        const newPath = currentPath ? `${currentPath}\\${entry.name}` : entry.name;
-                        await findScDataFiles(entry, newPath);
-                    }
-                }
-            }
-
-            try {
-                await findScDataFiles(currentDirHandle, '');
-
-                if (discoveredProjects.length === 0) {
-                    console.log('No projects with scdata.txt found.');
-                    return;
-                }
-
-                allProjectFolders = discoveredProjects.sort((a, b) => a.name.localeCompare(b.name));
-                populateGroupSelector();
-                await renderScGroup(0, sortBy);
-
-            } catch (err) {
-                console.error(`A critical error occurred during the SC Mode process:\n\n${err.stack}`);
-            }
-        }
 
         async function renderPlaylistMode() {
             thumbnailContainer.innerHTML = '';
@@ -2021,164 +1842,6 @@
             downloadScriptLink.download = 'create_playlist.ps1';
         }
 
-        async function renderRootScMode() {
-            shortcutSelections.clear();
-            canvases.clear();
-            createdObjectUrls.forEach(URL.revokeObjectURL);
-            createdObjectUrls = [];
-
-            let scdataContents;
-            try {
-                const scdataHandle = await currentDirHandle.getFileHandle('scdata.txt');
-                const scdataFile = await scdataHandle.getFile();
-                scdataContents = await scdataFile.text();
-            } catch (e) {
-                console.error('Failed to read scdata.txt:', e);
-                alert('scdata.txt not found in the selected directory.');
-                return;
-            }
-
-            const scdata = parseRootScData(scdataContents);
-            if (scdata.size === 0) {
-                thumbnailContainer.innerHTML = '<p style="color: black;">No subfolders found in scdata.txt.</p>';
-                return;
-            }
-            g_rootHandle = currentDirHandle;
-
-            const allImageLoadPromises = [];
-            const sortedSubfolders = Array.from(scdata.keys()).sort((a, b) => a.localeCompare(b));
-
-            for (const subfolder of sortedSubfolders) {
-                const shortcutFiles = scdata.get(subfolder);
-                const canvasId = getNextCanvasId();
-                const canvasElements = [];
-
-                const header = document.createElement('h2');
-                header.className = 'project-header';
-                header.textContent = subfolder;
-                canvasElements.push(header);
-
-                let projectVideoCount = 0;
-
-                let subfolderHandle;
-                try {
-                    subfolderHandle = await currentDirHandle.getDirectoryHandle(subfolder);
-                } catch (e) {
-                    console.error(`Could not get directory handle for "${subfolder}". Skipping.`, e);
-                    continue;
-                }
-                
-                let editDirHandle;
-                try {
-                    editDirHandle = await subfolderHandle.getDirectoryHandle('Edit Thumbnails');
-                } catch (e) {
-                    console.error(`Could not get 'Edit Thumbnails' directory handle for "${subfolder}". Skipping.`, e);
-                    continue;
-                }
-
-                for (const shortcutFile of shortcutFiles) {
-                    const videoBaseName = shortcutFile.substring(0, shortcutFile.lastIndexOf('.'));
-
-                    let videoDate = 'Unknown';
-                    try {
-                        for await (const entry of subfolderHandle.values()) {
-                            if (entry.kind === 'file' && entry.name.toLowerCase().startsWith(videoBaseName.toLowerCase())) {
-                                const file = await entry.getFile();
-                                videoDate = new Date(file.lastModified).toLocaleString();
-                                break;
-                            }
-                        }
-                    } catch (e) {}
-                    
-                    const rowDiv = document.createElement('div');
-                    rowDiv.className = 'landscape-row';
-                    rowDiv.dataset.shortcutName = shortcutFile + '.lnk';
-
-                    const dateInfo = document.createElement('div');
-                    dateInfo.className = 'date-info';
-                    dateInfo.textContent = `Created: ${videoDate}`;
-                    rowDiv.appendChild(dateInfo);
-
-                    const thumbnailsContainer = document.createElement('div');
-                    thumbnailsContainer.className = 'thumbnails-container';
-                    rowDiv.appendChild(thumbnailsContainer);
-
-                    const thumbnailFiles = [];
-                    try {
-                        for await (const entry of editDirHandle.values()) {
-                            if (entry.kind === 'file' && entry.name.toLowerCase().startsWith(videoBaseName.toLowerCase())) {
-                                thumbnailFiles.push(await entry.getFile());
-                            }
-                        }
-                    } catch (e) {
-                        console.error(`Failed while iterating 'Edit Thumbnails' for "${subfolder}".`, e);
-                        continue; 
-                    }
-
-                    if (thumbnailFiles.length > 0) {
-                        canvasElements.push(rowDiv); // Only add the row if thumbnails were found
-
-                        projectVideoCount++;
-                        thumbnailFiles.sort((a, b) => {
-                            const aNum = parseInt(a.name.substring(a.name.lastIndexOf('_') + 1));
-                            const bNum = parseInt(b.name.substring(b.name.lastIndexOf('_') + 1));
-                            return aNum - bNum;
-                        });
-                        
-                        rowDiv.addEventListener('click', () => {
-                            const isSelected = !rowDiv.querySelector('.thumbnail.selected-shortcut');
-                            rowDiv.querySelectorAll('.thumbnail').forEach(t => {
-                                t.classList.toggle('selected-shortcut', isSelected);
-                            });
-                            const shortcutName = rowDiv.dataset.shortcutName;
-                            const key = 'root_sc|' + shortcutName;
-                            if (isSelected) {
-                                shortcutSelections.set(key, shortcutName);
-                            } else {
-                                shortcutSelections.delete(key);
-                            }
-                        });
-
-                        thumbnailFiles.forEach(file => {
-                            const img = new Image();
-                            img.className = 'thumbnail';
-                            const url = URL.createObjectURL(file);
-                            createdObjectUrls.push(url);
-                            img.src = url;
-                            thumbnailsContainer.appendChild(img);
-
-                            const promise = new Promise((resolve) => {
-                                img.onload = () => {
-                                    img.dataset.originalWidth = img.width;
-                                    img.dataset.originalHeight = img.height;
-                                    resolve();
-                                };
-                                img.onerror = (err) => {
-                                    console.error(`Image failed to load:`, err);
-                                    resolve();
-                                };
-                            });
-                            allImageLoadPromises.push(promise);
-                        });
-                    }
-                }
-
-                header.textContent = `${subfolder} (${projectVideoCount} ${projectVideoCount === 1 ? 'video' : 'videos'})`;
-                if (canvasElements.length > 1) { // More than just the header
-                    canvases.set(canvasId, { id: canvasId, name: subfolder, elements: canvasElements, path: subfolder });
-                }
-            }
-
-            await Promise.all(allImageLoadPromises);
-            
-            if (canvases.size > 0) {
-                populateCanvasDropdown();
-                renderCanvas(canvases.keys().next().value);
-            } else {
-                populateCanvasDropdown(); // Clears it
-                thumbnailContainer.innerHTML = '<p style="color: black;">No matching thumbnails found for the shortcuts listed in scdata.txt.</p>';
-            }
-        }
 
         function generateDeleteScript() {
             let scriptLines = [
