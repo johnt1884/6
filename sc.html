@@ -668,7 +668,7 @@
                         renderDirectoryMode(e.target.value);
                     } else if (currentMode === 'latest-videos') {
                         renderLatestVideosMode(e.target.value);
-                    } else if (currentMode === 'sc') {
+                    } else if (currentMode === 'sc' || currentMode === 'root-sc') {
                         renderVideosInternal(false, e.target.value, true);
                     }
                 }
@@ -678,7 +678,8 @@
                 try {
                     const dirHandle = await window.showDirectoryPicker();
                     currentDirHandle = dirHandle;
-                    currentMode = 'sc';
+                    g_rootHandle = null;
+                    currentMode = 'root-sc';
                     setVisibilityForMode(currentMode);
                     await renderVideosInternal(false, sortSelector.value, true);
                 } catch (err) {
@@ -826,6 +827,7 @@
 
             const isDirectory = mode === 'directory';
             const isSc = mode === 'sc';
+            const isRootSc = mode === 'root-sc';
             const isScNew = mode === 'sc-new';
             const isLatestVideos = mode === 'latest-videos';
             const isPlaylist = mode === 'playlist';
@@ -835,10 +837,10 @@
             createPlaylistBtn.style.display = isPlaylist ? 'inline-block' : 'none';
 
             checkboxContainers.forEach(el => el.style.display = 'flex');
-            canvasSelect.style.display = (isDirectory || isSc || isScNew || isLatestVideos || isPlaylist) ? 'inline-block' : 'none';
+            canvasSelect.style.display = (isDirectory || isSc || isRootSc || isScNew || isLatestVideos || isPlaylist) ? 'inline-block' : 'none';
             groupSelector.style.display = 'none';
 
-            const showSelectionButtons = isLatestVideos || isPlaylist || isDirectory || isSc || isScNew;
+            const showSelectionButtons = isLatestVideos || isPlaylist || isDirectory || isSc || isRootSc || isScNew;
             if (rootScBtn) rootScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
             if (subfolderScBtn) subfolderScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
             if (bothScBtn) bothScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
@@ -1025,7 +1027,7 @@
                     scriptLines.push(`foreach ($dirName in $thumbDirs) {`);
                     scriptLines.push(`    $dirPath = Join-Path -Path $projectPath -ChildPath $dirName`);
                     scriptLines.push(`    if (Test-Path -LiteralPath $dirPath) {`);
-                    scriptLines.push(`        Get-ChildItem -Path $dirPath -Filter "${escapedThumbBase}_*" | Remove-Item -Force`);
+                    scriptLines.push(`        Get-ChildItem -Path $dirPath -Filter '${escapedThumbBase}_*' | Remove-Item -Force`);
                     scriptLines.push(`        Write-Host "Deleted thumbnails for ${escapedVideoName} in $dirName"`);
                     scriptLines.push(`    }`);
                     scriptLines.push(`}`);
@@ -1221,7 +1223,10 @@
         }
 
         async function renderVideosInternal(isNewOnly = false, sortBy = 'name-asc', isShortcutsOnly = false) {
-            console.log(`Starting renderVideosInternal (isNewOnly=${isNewOnly}, isShortcutsOnly=${isShortcutsOnly})`);
+            console.log(`Starting renderVideosInternal (isNewOnly=${isNewOnly}, isShortcutsOnly=${isShortcutsOnly}, currentMode=${currentMode})`);
+            if (currentMode === 'root-sc') {
+                g_rootHandle = currentDirHandle;
+            }
             createdObjectUrls.forEach(URL.revokeObjectURL);
             createdObjectUrls = [];
             canvases.clear();
@@ -1493,8 +1498,12 @@
 
                     const hasRootSc = rootScEntry !== false;
 
-                    if (isShortcutsOnly && hasAnyShortcuts && !hasProjectSc && !hasRootSc) {
-                        continue;
+                    if (isShortcutsOnly) {
+                        if (currentMode === 'root-sc') {
+                            if (!hasRootSc) continue;
+                        } else if (hasAnyShortcuts) {
+                            if (!hasProjectSc && !hasRootSc) continue;
+                        }
                     }
 
                     if (isNewOnly && mostRecentShortcutTime && videoFile.lastModified <= mostRecentShortcutTime) {
@@ -1557,7 +1566,7 @@
 
                         // Clear previous selection visuals from this row
                         rowDiv.querySelectorAll('.thumbnail').forEach(t => {
-                            t.classList.remove('selected-root-sc', 'selected-subfolder-sc', 'selected-both-sc', 'selected-shortcut');
+                            t.classList.remove('selected-root-sc', 'selected-subfolder-sc', 'selected-both-sc', 'selected-delete-sc', 'selected-shortcut');
                         });
 
                         if (existingSelection) {
@@ -1715,7 +1724,7 @@
 
                                 // Clear previous selection visuals from this row
                                 rowDiv.querySelectorAll('.thumbnail').forEach(t => {
-                                    t.classList.remove('selected-root-sc', 'selected-subfolder-sc', 'selected-both-sc', 'selected-shortcut');
+                                    t.classList.remove('selected-root-sc', 'selected-subfolder-sc', 'selected-both-sc', 'selected-delete-sc', 'selected-shortcut');
                                 });
 
                                 if (existingSelection) {
