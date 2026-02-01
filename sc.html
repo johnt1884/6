@@ -937,20 +937,21 @@
                 scriptLines.push(`    # Shortcut for: ${sel.projectPath}\\${sel.videoName} (Type: ${selectionType})`);
                 scriptLines.push(`    $targetPath = ${targetPathConstruction}`);
 
-                const createShortcut = (scPath) => {
+                const createShortcut = (scPath, logMsg) => {
                     scriptLines.push(`    $shortcutPath = ${scPath}`);
                     scriptLines.push('    $shortcut = $wshell.CreateShortcut($shortcutPath)');
                     scriptLines.push('    $shortcut.TargetPath = $targetPath');
                     scriptLines.push('    $shortcut.Save()');
+                    scriptLines.push(`    Write-Host "${logMsg}"`);
                 };
 
                 if (selectionType === 'root-sc' || selectionType === 'both-sc') {
-                    createShortcut(`Join-Path -Path $rootScFolder -ChildPath ('${escapedVideoName}' + '.lnk')`);
+                    createShortcut(`Join-Path -Path $rootScFolder -ChildPath ('${escapedVideoName}' + '.lnk')`, `Created root shortcut: ${escapedVideoName}`);
                 }
 
                 if (selectionType === 'subfolder-sc' || selectionType === 'both-sc') {
                     const subfolderScPath = `(Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}') -ChildPath 'sc')`;
-                    createShortcut(`Join-Path -Path ${subfolderScPath} -ChildPath ('${escapedVideoName}' + '.lnk')`);
+                    createShortcut(`Join-Path -Path ${subfolderScPath} -ChildPath ('${escapedVideoName}' + '.lnk')`, `Created subfolder shortcut: ${escapedProjectPath}\\${escapedVideoName}`);
                 }
                 scriptLines.push('');
             });
@@ -1125,7 +1126,7 @@
             createdObjectUrls = [];
             canvases.clear();
             shortcutSelections.clear();
-            if (isShortcutsOnly) initialShortcutSelections.clear();
+            initialShortcutSelections.clear();
             thumbnailContainer.innerHTML = '';
             allVideoFiles = [];
 
@@ -1770,7 +1771,10 @@
                     const escapedProjectPath = escapePSString(sel.projectPath);
                     scriptLines.push(`        $projectCheckPath = Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}'`);
                     scriptLines.push(`        if ($targetPath.StartsWith($projectCheckPath)) {`);
-                    scriptLines.push(`            if (-not $playlistContent.Contains($targetPath)) { $playlistContent.Add($targetPath) }`);
+                    scriptLines.push(`            if (-not $playlistContent.Contains($targetPath)) {`);
+                    scriptLines.push(`                $playlistContent.Add($targetPath)`);
+                    scriptLines.push(`                Write-Host "Added to playlist (root): $($shortcutFile.Name)"`);
+                    scriptLines.push(`            }`);
                     scriptLines.push(`        }`);
                 });
 
@@ -1788,7 +1792,10 @@
                     scriptLines.push(`        Get-ChildItem -Path $subfolderScPath -Filter *.lnk | ForEach-Object {`);
                     scriptLines.push(`            $shortcut = $wshell.CreateShortcut($_.FullName)`);
                     scriptLines.push(`            $targetPath = $shortcut.TargetPath`);
-                    scriptLines.push(`            if (-not $playlistContent.Contains($targetPath)) { $playlistContent.Add($targetPath) }`);
+                    scriptLines.push(`            if (-not $playlistContent.Contains($targetPath)) {`);
+                    scriptLines.push(`                $playlistContent.Add($targetPath)`);
+                    scriptLines.push(`                Write-Host "Added to playlist (subfolder): $($_.Name)"`);
+                    scriptLines.push(`            }`);
                     scriptLines.push(`        }`);
                     scriptLines.push(`    }`);
                 });
@@ -1809,33 +1816,6 @@
         }
 
 
-        function generateDeleteScript() {
-            let scriptLines = [
-                '$PSScriptRoot = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition',
-                `$scFolder = Join-Path -Path $PSScriptRoot -ChildPath 'sc'`,
-                ''
-            ];
-
-            shortcutSelections.forEach((shortcutName, key) => {
-                const escapedShortcutName = escapePSString(shortcutName);
-                scriptLines.push(`$shortcutPath = Join-Path -Path $scFolder -ChildPath '${escapedShortcutName}'`);
-                scriptLines.push('if (Test-Path -LiteralPath $shortcutPath) {');
-                scriptLines.push('    Remove-Item -Path $shortcutPath');
-                scriptLines.push(`    Write-Host "Deleted: ${escapedShortcutName}"`);
-                scriptLines.push('} else {');
-                scriptLines.push(`    Write-Host "Not found, skipped: ${escapedShortcutName}"`);
-                scriptLines.push('}');
-                scriptLines.push('');
-            });
-
-            scriptLines.push('Write-Host "Deletion script complete."');
-            scriptLines.push('Read-Host -Prompt "Press Enter to exit"');
-            
-            const script = scriptLines.join('\r\n');
-            batchScriptTextArea.value = script;
-            const blob = new Blob([script], { type: 'text/plain;charset=utf-8' });
-            downloadScriptLink.href = URL.createObjectURL(blob);
-        }
 
         function parseRootScData(scdataText) {
             const lines = scdataText.split('\n').map(line => line.trim()).filter(line => line);
