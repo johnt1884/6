@@ -352,7 +352,7 @@
                             <input type="color" id="header-text-color-picker" value="#1c1e21">
                         </div>
                         <div class="options-row">
-                            <label for="row-number-color-picker">Show Numbers Text</label>
+                            <label for="row-number-color-picker">Show Numbers Header Text</label>
                             <input type="color" id="row-number-color-picker" value="#333333">
                         </div>
                         <div class="options-row">
@@ -811,19 +811,18 @@
             const isSc = mode === 'sc';
             const isScNew = mode === 'sc-new';
             const isLatestVideos = mode === 'latest-videos';
-            const isRootSc = mode === 'root-sc';
             const isPlaylist = mode === 'playlist';
 
-            deleteShortcutsBtn.style.display = isRootSc ? 'inline-block' : 'none';
-            shortcutScriptBtn.style.display = (isRootSc || isPlaylist) ? 'none' : 'inline-block';
+            deleteShortcutsBtn.style.display = 'none'; // Script handles deletions now
+            shortcutScriptBtn.style.display = isPlaylist ? 'none' : 'inline-block';
             createPlaylistBtn.style.display = isPlaylist ? 'inline-block' : 'none';
             xShortcutBtn.style.display = (isSc || isScNew) ? 'inline-block' : 'none';
 
             checkboxContainers.forEach(el => el.style.display = 'flex');
-            canvasSelect.style.display = (isDirectory || isSc || isScNew || isLatestVideos || isRootSc || isPlaylist) ? 'inline-block' : 'none';
+            canvasSelect.style.display = (isDirectory || isSc || isScNew || isLatestVideos || isPlaylist) ? 'inline-block' : 'none';
             groupSelector.style.display = 'none';
 
-            const showSelectionButtons = isLatestVideos || isPlaylist || isDirectory;
+            const showSelectionButtons = isLatestVideos || isPlaylist || isDirectory || isSc || isScNew;
             rootScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
             subfolderScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
             bothScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
@@ -1345,14 +1344,23 @@
                 const hasAnyShortcuts = projectScData.size > 0 || rootProjectShortcutsSet.size > 0;
                 for (const vName of Object.keys(groupedFiles)) {
                     if (videoFileMap.has(vName)) {
+                        const videoFile = videoFileMap.get(vName);
                         if (isShortcutsOnly && hasAnyShortcuts) {
-                            const vFile = videoFileMap.get(vName);
-                            if (!checkShortcut(vFile.name, projectScData) && !checkShortcut(vFile.name, rootProjectShortcutsSet)) {
+                            if (!checkShortcut(videoFile.name, projectScData) && !checkShortcut(videoFile.name, rootProjectShortcutsSet)) {
+                                continue;
+                            }
+                        }
+                        if (isNewOnly && mostRecentShortcutTime) {
+                            if (videoFile.lastModified <= mostRecentShortcutTime) {
                                 continue;
                             }
                         }
                         projectVideoCount++;
                     }
+                }
+
+                if (projectVideoCount === 0) {
+                    continue;
                 }
 
                 const header = document.createElement('h2');
@@ -1403,6 +1411,11 @@
 
                     if (isShortcutsOnly && hasAnyShortcuts && !hasProjectSc && !hasRootSc) {
                         continue;
+                    }
+
+                    // Debug log for both-sc detection
+                    if (hasProjectSc || hasRootSc) {
+                        console.log(`[SC Match] Video: ${videoFile.name}, Subfolder: ${hasProjectSc}, Root: ${hasRootSc}`);
                     }
 
                     addedRows++;
