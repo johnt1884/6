@@ -899,14 +899,14 @@
 
             if (needsRootSc) {
                 scriptLines.push(`$rootScFolder = Join-Path -Path $PSScriptRoot -ChildPath 'sc'`);
-                scriptLines.push('if (-not (Test-Path -LiteralPath $rootScFolder)) { New-Item -ItemType Directory -Path $rootScFolder | Out-Null }');
+                scriptLines.push('if (-not (Test-Path -Path $rootScFolder)) { New-Item -ItemType Directory -Path $rootScFolder -Force | Out-Null }');
                 scriptLines.push('');
             }
             
             subfolderProjects.forEach(projectPath => {
                 const escapedProjectPath = escapePSString(projectPath);
-                const subfolderScPath = `(Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}') -ChildPath 'sc')`;
-                scriptLines.push(`if (-not (Test-Path -LiteralPath ${subfolderScPath})) { New-Item -ItemType Directory -Path ${subfolderScPath} | Out-Null }`);
+                scriptLines.push(`$subfolderScPath = Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}') -ChildPath 'sc'`);
+                scriptLines.push(`if (-not (Test-Path -Path $subfolderScPath)) { New-Item -ItemType Directory -Path $subfolderScPath -Force | Out-Null }`);
             });
             if (subfolderProjects.size > 0) {
                 scriptLines.push('');
@@ -939,10 +939,15 @@
 
                 const createShortcut = (scPath, logMsg) => {
                     scriptLines.push(`    $shortcutPath = ${scPath}`);
-                    scriptLines.push('    $shortcut = $wshell.CreateShortcut($shortcutPath)');
-                    scriptLines.push('    $shortcut.TargetPath = $targetPath');
-                    scriptLines.push('    $shortcut.Save()');
-                    scriptLines.push(`    Write-Host "${logMsg}"`);
+                    scriptLines.push('    try {');
+                    scriptLines.push('        $shortcut = $wshell.CreateShortcut($shortcutPath)');
+                    scriptLines.push('        $shortcut.TargetPath = $targetPath');
+                    scriptLines.push('        $shortcut.Save()');
+                    scriptLines.push(`        Write-Host "${logMsg}"`);
+                    scriptLines.push('    } catch {');
+                    scriptLines.push('        Write-Host "FAILED to create shortcut: $shortcutPath" -ForegroundColor Red');
+                    scriptLines.push('        Write-Host $_.Exception.Message -ForegroundColor Red');
+                    scriptLines.push('    }');
                 };
 
                 if (selectionType === 'root-sc' || selectionType === 'both-sc') {
@@ -950,8 +955,8 @@
                 }
 
                 if (selectionType === 'subfolder-sc' || selectionType === 'both-sc') {
-                    const subfolderScPath = `(Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}') -ChildPath 'sc')`;
-                    createShortcut(`Join-Path -Path ${subfolderScPath} -ChildPath ('${escapedVideoName}' + '.lnk')`, `Created subfolder shortcut: ${escapedProjectPath}\\${escapedVideoName}`);
+                    const scDirPath = `Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}') -ChildPath 'sc'`;
+                    createShortcut(`Join-Path -Path (${scDirPath}) -ChildPath ('${escapedVideoName}' + '.lnk')`, `Created subfolder shortcut: ${escapedProjectPath}\\${escapedVideoName}`);
                 }
                 scriptLines.push('');
             });
