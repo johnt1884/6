@@ -314,7 +314,6 @@
                         <button id="load-directory-btn">Load all videos</button>
                         <button id="load-latest-videos-btn">Load new videos</button>
                         <button id="load-sc-btn">Load all shortcuts</button>
-                        <button id="load-sc-new-btn">Load new shortcuts</button>
                         <button id="load-root-sc-btn">Load root shortcut directory</button>
                         <button id="create-playlist-load-btn">Create playlist</button>
                     </div>
@@ -436,7 +435,6 @@
         const sortSelector = document.getElementById('sort-selector');
         const loadButton = document.getElementById('load-directory-btn');
         const loadScButton = document.getElementById('load-sc-btn');
-        const loadScNewButton = document.getElementById('load-sc-new-btn');
         const loadLatestVideosButton = document.getElementById('load-latest-videos-btn');
         const loadRootScButton = document.getElementById('load-root-sc-btn');
         const createPlaylistLoadBtn = document.getElementById('create-playlist-load-btn');
@@ -572,6 +570,7 @@
                 try {
                     const dirHandle = await window.showDirectoryPicker();
                     currentDirHandle = dirHandle;
+                    g_rootHandle = null;
                     currentMode = 'directory';
                     setVisibilityForMode(currentMode);
                     await renderDirectoryMode();
@@ -584,6 +583,7 @@
                 try {
                     const dirHandle = await window.showDirectoryPicker();
                     currentDirHandle = dirHandle;
+                    g_rootHandle = null;
                     currentMode = 'sc';
                     setVisibilityForMode(currentMode);
                     await renderVideosInternal(false, sortSelector.value, true);
@@ -594,24 +594,12 @@
                 }
             });
 
-            loadScNewButton.addEventListener('click', async () => {
-                try {
-                    const dirHandle = await window.showDirectoryPicker();
-                    currentDirHandle = dirHandle;
-                    currentMode = 'sc-new';
-                    setVisibilityForMode(currentMode);
-                    await renderScNewMode();
-                } catch (err) {
-                    if (err.name !== 'AbortError') {
-                        console.error('Failed to open directory or render SC New mode:', err);
-                    }
-                }
-            });
 
             loadLatestVideosButton.addEventListener('click', async () => {
                 try {
                     const dirHandle = await window.showDirectoryPicker();
                     currentDirHandle = dirHandle;
+                    g_rootHandle = null;
                     currentMode = 'latest-videos';
                     setVisibilityForMode(currentMode);
                     await renderLatestVideosMode();
@@ -632,8 +620,16 @@
             });
 
             shortcutScriptBtn.addEventListener('click', () => {
-                if (shortcutSelections.size === 0 && dummyTimestampProjects.size === 0) {
-                    alert('Please select one or more thumbnails or activate a dummy timestamp before creating a script.');
+                const hasSelections = shortcutSelections.size > 0;
+                const hasDeletions = Array.from(initialShortcutSelections.keys()).some(key => !shortcutSelections.has(key));
+                const hasModifiedType = Array.from(shortcutSelections.entries()).some(([key, sel]) => {
+                    const initial = initialShortcutSelections.get(key);
+                    return initial && initial.type !== sel.type;
+                });
+                const hasDummyTimestamp = dummyTimestampProjects.size > 0;
+
+                if (!hasSelections && !hasDeletions && !hasModifiedType && !hasDummyTimestamp) {
+                    alert('No changes to save.');
                     return;
                 }
                 generateShortcutScript();
@@ -1248,12 +1244,14 @@
                 
                 const normalizedProjectName = normalizeProjectKey(project.name);
                 const normalizedProjectPath = normalizeProjectKey(project.path);
+                console.log(`Matching project: Name="${normalizedProjectName}", Path="${normalizedProjectPath}"`);
                 
                 let rootProjectShortcuts = rootScData.get(normalizedProjectName) || [];
                 if (rootProjectShortcuts.length === 0 && normalizedProjectPath && normalizedProjectPath !== normalizedProjectName) {
                     rootProjectShortcuts = rootScData.get(normalizedProjectPath) || [];
                 }
                 const rootProjectShortcutsSet = new Set(rootProjectShortcuts);
+                console.log(`Project: ${project.name}, rootProjectShortcutsSet size: ${rootProjectShortcutsSet.size}`);
 
                 const canvasId = getNextCanvasId();
                 const canvasElements = [];
