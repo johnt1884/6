@@ -540,16 +540,20 @@
 
             // Load saved colors
             Object.keys(colorPickers).forEach(id => {
+                const picker = colorPickers[id];
+                if (!picker) return;
                 const saved = localStorage.getItem(`sc-color-${id}`);
                 if (saved) {
                     document.documentElement.style.setProperty(`--${id}`, saved);
-                    colorPickers[id].value = saved;
+                    picker.value = saved;
                 }
             });
 
             // Handle color changes
             Object.keys(colorPickers).forEach(id => {
-                colorPickers[id].addEventListener('input', (e) => {
+                const picker = colorPickers[id];
+                if (!picker) return;
+                picker.addEventListener('input', (e) => {
                     const color = e.target.value;
                     document.documentElement.style.setProperty(`--${id}`, color);
                     localStorage.setItem(`sc-color-${id}`, color);
@@ -559,26 +563,30 @@
                 });
             });
 
-            revertDefaultsBtn.addEventListener('click', () => {
-                const defaults = {
-                    'bg-color': '#EBEBEB',
-                    'toolbar-color': '#1877f2',
-                    'root-sc-color': '#008000',
-                    'subfolder-sc-color': '#ffff00',
-                    'both-sc-color': '#0000ff',
-                    'delete-sc-color': '#ff0000',
-                    'header-text-color': '#1c1e21',
-                    'row-number-color': '#333333',
-                    'date-text-color': '#555555'
-                };
-                Object.keys(defaults).forEach(id => {
-                    const color = defaults[id];
-                    document.documentElement.style.setProperty(`--${id}`, color);
-                    colorPickers[id].value = color;
-                    localStorage.removeItem(`sc-color-${id}`);
+            if (revertDefaultsBtn) {
+                revertDefaultsBtn.addEventListener('click', () => {
+                    const defaults = {
+                        'bg-color': '#EBEBEB',
+                        'toolbar-color': '#1877f2',
+                        'root-sc-color': '#008000',
+                        'subfolder-sc-color': '#ffff00',
+                        'both-sc-color': '#0000ff',
+                        'delete-sc-color': '#ff0000',
+                        'header-text-color': '#1c1e21',
+                        'row-number-color': '#333333',
+                        'date-text-color': '#555555'
+                    };
+                    Object.keys(defaults).forEach(id => {
+                        const color = defaults[id];
+                        document.documentElement.style.setProperty(`--${id}`, color);
+                        if (colorPickers[id]) {
+                            colorPickers[id].value = color;
+                        }
+                        localStorage.removeItem(`sc-color-${id}`);
+                    });
+                    updateCircleColors();
                 });
-                updateCircleColors();
-            });
+            }
 
             updateCircleColors();
 
@@ -745,10 +753,12 @@
         }
 
         function updateCircleColors() {
-            const rootCircle = rootScBtn.querySelector('.color-circle');
-            const subfolderCircle = subfolderScBtn.querySelector('.color-circle');
-            const bothCircle = bothScBtn.querySelector('.color-circle');
-            const deleteCircle = deleteScBtn.querySelector('.color-circle');
+            const getCircle = (btn) => btn ? btn.querySelector('.color-circle') : null;
+
+            const rootCircle = getCircle(rootScBtn);
+            const subfolderCircle = getCircle(subfolderScBtn);
+            const bothCircle = getCircle(bothScBtn);
+            const deleteCircle = getCircle(deleteScBtn);
             
             if (rootCircle) rootCircle.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--root-sc-color');
             if (subfolderCircle) subfolderCircle.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--subfolder-sc-color');
@@ -757,10 +767,10 @@
         }
 
         function updateSelectionTypeButtons() {
-            rootScBtn.classList.toggle('active', currentSelectionType === 'root-sc');
-            subfolderScBtn.classList.toggle('active', currentSelectionType === 'subfolder-sc');
-            bothScBtn.classList.toggle('active', currentSelectionType === 'both-sc');
-            deleteScBtn.classList.toggle('active', currentSelectionType === 'delete-sc');
+            if (rootScBtn) rootScBtn.classList.toggle('active', currentSelectionType === 'root-sc');
+            if (subfolderScBtn) subfolderScBtn.classList.toggle('active', currentSelectionType === 'subfolder-sc');
+            if (bothScBtn) bothScBtn.classList.toggle('active', currentSelectionType === 'both-sc');
+            if (deleteScBtn) deleteScBtn.classList.toggle('active', currentSelectionType === 'delete-sc');
         }
 
         function renderCanvas(canvasId) {
@@ -829,10 +839,10 @@
             groupSelector.style.display = 'none';
 
             const showSelectionButtons = isLatestVideos || isPlaylist || isDirectory || isSc || isScNew;
-            rootScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
-            subfolderScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
-            bothScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
-            deleteScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
+            if (rootScBtn) rootScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
+            if (subfolderScBtn) subfolderScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
+            if (bothScBtn) bothScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
+            if (deleteScBtn) deleteScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
             if (showSelectionButtons) {
                 updateSelectionTypeButtons();
             }
@@ -899,7 +909,14 @@
                 ''
             ];
 
-            if (selectionsToProcess.length > 0) {
+            const hasCreations = selectionsToProcess.some(sel => {
+                if (sel.type === 'delete-sc') return false;
+                const key = sel.projectPath + '|' + sel.videoName;
+                const initial = initialShortcutSelections.get(key);
+                return !initial || initial.type !== sel.type;
+            });
+
+            if (hasCreations) {
                  scriptLines.push('# --- Creating Shortcuts ---');
             }
 
@@ -952,8 +969,6 @@
                     targetPathConstruction = `(Join-Path -Path ${targetPathConstruction} -ChildPath '${escapedSubfolder}')`;
                 }
                 targetPathConstruction = `Join-Path -Path ${targetPathConstruction} -ChildPath '${escapedVideoName}'`;
-                
-                const selectionType = sel.type || 'root-sc';
 
                 scriptLines.push(`    # Shortcut for: ${sel.projectPath}\\${sel.videoName} (Type: ${selectionType})`);
                 scriptLines.push(`    $targetPath = ${targetPathConstruction}`);
@@ -1010,7 +1025,7 @@
                     scriptLines.push(`foreach ($dirName in $thumbDirs) {`);
                     scriptLines.push(`    $dirPath = Join-Path -Path $projectPath -ChildPath $dirName`);
                     scriptLines.push(`    if (Test-Path -LiteralPath $dirPath) {`);
-                    scriptLines.push(`        Get-ChildItem -Path $dirPath -Filter "${escapedThumbBase}*" | Remove-Item -Force`);
+                    scriptLines.push(`        Get-ChildItem -Path $dirPath -Filter "${escapedThumbBase}_*" | Remove-Item -Force`);
                     scriptLines.push(`        Write-Host "Deleted thumbnails for ${escapedVideoName} in $dirName"`);
                     scriptLines.push(`    }`);
                     scriptLines.push(`}`);
@@ -1966,31 +1981,30 @@
                 const isQuoted = (line.startsWith('"') && line.endsWith('"')) || (line.startsWith("'") && line.endsWith("'"));
                 const cleanLine = line.replace(/^["']|["']$/g, '').trim();
                 
-                const isShortcut = cleanLine.toLowerCase().endsWith('.lnk') || cleanLine.toLowerCase().endsWith('.ink') || cleanLine.toLowerCase().endsWith(' - shortcut.lnk');
-                const isVideo = cleanLine.toLowerCase().match(/\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|mpg|mpeg)$/i);
+                let entry = cleanLine;
+                let tag = "";
+                if (cleanLine.endsWith('[BOTH]')) {
+                    tag = "BOTH";
+                    entry = cleanLine.substring(0, cleanLine.length - 6).trim();
+                } else if (cleanLine.endsWith('[ROOT]')) {
+                    tag = "ROOT";
+                    entry = cleanLine.substring(0, cleanLine.length - 6).trim();
+                }
 
-                if (isQuoted || (!isShortcut && !isVideo && !cleanLine.includes('.') && cleanLine.length > 0)) {
+                const isShortcut = entry.toLowerCase().endsWith('.lnk') || entry.toLowerCase().endsWith('.ink') || entry.toLowerCase().endsWith(' - shortcut.lnk');
+                const isVideo = entry.toLowerCase().match(/\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|mpg|mpeg)$/i);
+
+                if (isQuoted || (!isShortcut && !isVideo && !entry.includes('.') && entry.length > 0)) {
                     // It's a project name
                     currentSubfolder = normalizeProjectKey(cleanLine);
                     if (currentSubfolder && !data.has(currentSubfolder)) {
                         data.set(currentSubfolder, new Map());
                     }
-                } else if (cleanLine.length > 0) {
+                } else if (entry.length > 0) {
                     // If no currentSubfolder has been identified yet, it belongs to the "" key
                     if (!data.has(currentSubfolder)) {
                         data.set(currentSubfolder, new Map());
                     }
-
-                    let entry = cleanLine;
-                    let tag = "";
-                    if (cleanLine.endsWith('[BOTH]')) {
-                        tag = "BOTH";
-                        entry = cleanLine.substring(0, cleanLine.length - 6).trim();
-                    } else if (cleanLine.endsWith('[ROOT]')) {
-                        tag = "ROOT";
-                        entry = cleanLine.substring(0, cleanLine.length - 6).trim();
-                    }
-
                     data.get(currentSubfolder).set(entry.toLowerCase(), tag);
                 }
             }
