@@ -1407,45 +1407,7 @@
 
                 const videoFileMap = new Map(projectVideoFiles.map(f => [f.name.substring(0, f.name.lastIndexOf('.')), f]));
                 
-                let projectVideoCount = 0;
-                const hasAnyShortcuts = projectScData.size > 0 || rootProjectShortcutsSet.size > 0;
-                for (const vName of Object.keys(groupedFiles)) {
-                    if (videoFileMap.has(vName)) {
-                        const videoFile = videoFileMap.get(vName);
-                        if (isShortcutsOnly && hasAnyShortcuts) {
-                            if (!checkShortcut(videoFile.name, projectScData) && !checkShortcut(videoFile.name, rootProjectShortcutsSet)) {
-                                continue;
-                            }
-                        }
-                        if (isNewOnly && mostRecentShortcutTime) {
-                            if (videoFile.lastModified <= mostRecentShortcutTime) {
-                                continue;
-                            }
-                        }
-                        projectVideoCount++;
-                    }
-                }
-
-                if (projectVideoCount === 0) {
-                    continue;
-                }
-
-                const header = document.createElement('h2');
-                header.className = 'project-header';
-                const headerText = document.createElement('span');
-                headerText.textContent = `${project.name} (${projectVideoCount} ${projectVideoCount === 1 ? 'video' : 'videos'})`;
-                header.appendChild(headerText);
-
-                if (isNewOnly) {
-                    const headerDateInfo = document.createElement('span');
-                    headerDateInfo.className = 'date-info';
-                    headerDateInfo.textContent = `Last Shortcut: ${new Date(mostRecentShortcutTime).toLocaleString()}`;
-                    header.appendChild(headerDateInfo);
-                }
-                canvasElements.push(header);
-
                 let videoNames = Object.keys(groupedFiles);
-                let addedRows = 0;
                 videoNames.sort((a, b) => {
                     if (sortBy === 'name-asc') return a.localeCompare(b);
                     if (sortBy === 'name-desc') return b.localeCompare(a);
@@ -1458,18 +1420,10 @@
                     return 0;
                 });
 
-                for (const videoName of videoNames) {
-                    const files = groupedFiles[videoName].sort((a, b) => {
-                        const aNum = parseInt(a.name.substring(a.name.lastIndexOf('_') + 1));
-                        const bNum = parseInt(b.name.substring(b.name.lastIndexOf('_') + 1));
-                        return aNum - bNum;
-                    });
+                const projectRows = [];
+                const hasAnyShortcuts = projectScData.size > 0 || rootProjectShortcutsSet.size > 0;
 
-                    const rowDiv = document.createElement('div');
-                    rowDiv.className = 'landscape-row';
-                    rowDiv.dataset.videoName = videoName;
-                    rowDiv.dataset.projectPath = project.path;
-                    
+                for (const videoName of videoNames) {
                     const videoFile = videoFileMap.get(videoName);
                     if (!videoFile) continue;
 
@@ -1510,12 +1464,46 @@
                         continue;
                     }
 
+                    const files = groupedFiles[videoName].sort((a, b) => {
+                        const aNum = parseInt(a.name.substring(a.name.lastIndexOf('_') + 1));
+                        const bNum = parseInt(b.name.substring(b.name.lastIndexOf('_') + 1));
+                        return aNum - bNum;
+                    });
+
+                    const rowDiv = document.createElement('div');
+                    rowDiv.className = 'landscape-row';
+                    rowDiv.dataset.videoName = videoName;
+                    rowDiv.dataset.projectPath = project.path;
+
                     // Debug log for both-sc detection
                     if (hasProjectSc || hasRootSc) {
                         console.log(`[SC Match] Video: ${videoFile.name}, Subfolder: ${hasProjectSc}, Root: ${hasRootSc}`);
                     }
 
-                    addedRows++;
+                    projectRows.push({ rowDiv, videoFile, files, initialShortcutType: '', hasProjectSc, hasRootSc, rootScEntry });
+                }
+
+                if (projectRows.length === 0) {
+                    continue;
+                }
+
+                const header = document.createElement('h2');
+                header.className = 'project-header';
+                const headerText = document.createElement('span');
+                const projectPrefix = (currentMode === 'root-sc' || currentMode === 'sc') ? 'Root Shortcuts: ' : '';
+                headerText.textContent = `${projectPrefix}${project.name} (${projectRows.length} ${projectRows.length === 1 ? 'video' : 'videos'})`;
+                header.appendChild(headerText);
+
+                if (isNewOnly) {
+                    const headerDateInfo = document.createElement('span');
+                    headerDateInfo.className = 'date-info';
+                    headerDateInfo.textContent = `Last Shortcut: ${new Date(mostRecentShortcutTime).toLocaleString()}`;
+                    header.appendChild(headerDateInfo);
+                }
+                canvasElements.push(header);
+
+                for (const rowData of projectRows) {
+                    const { rowDiv, videoFile, files, hasProjectSc, hasRootSc, rootScEntry } = rowData;
                     const dateInfo = document.createElement('div');
                     dateInfo.className = 'date-info';
                     dateInfo.textContent = `Created: ${new Date(videoFile.lastModified).toLocaleString()}`;
@@ -1604,7 +1592,7 @@
                         allImageLoadPromises.push(promise);
                     });
                 }
-                 if (addedRows > 0) {
+                 if (projectRows.length > 0) {
                     const hr = document.createElement('hr');
                     canvasElements.push(hr);
                     canvases.set(canvasId, { id: canvasId, name: project.name, elements: canvasElements, path: project.path });
