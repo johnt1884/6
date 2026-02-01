@@ -1051,16 +1051,26 @@
         }
 
         async function getScDataForProject(projectHandle) {
-            try {
-                const handle = await projectHandle.getFileHandle('scdata.txt');
-                const file = await handle.getFile();
-                const text = await file.text();
-                const data = new Set(text.split('\n').map(normalizeLine).filter(l => l));
-                console.log(`Loaded ${data.size} shortcuts from project scdata.txt: ${projectHandle.name}`);
-                return data;
-            } catch (e) {
-                return new Set();
+            const allShortcuts = new Set();
+
+            async function scanDir(dirHandle) {
+                try {
+                    const handle = await dirHandle.getFileHandle('scdata.txt');
+                    const file = await handle.getFile();
+                    const text = await file.text();
+                    text.split('\n').map(normalizeLine).filter(l => l).forEach(s => allShortcuts.add(s));
+                } catch (e) {}
+
+                for await (const entry of dirHandle.values()) {
+                    if (entry.kind === 'directory' && entry.name.toLowerCase() !== 'sc' && entry.name.toLowerCase() !== 'edit thumbnails' && entry.name.toLowerCase() !== 'thumbnails') {
+                        await scanDir(entry);
+                    }
+                }
             }
+
+            await scanDir(projectHandle);
+            console.log(`Loaded ${allShortcuts.size} shortcuts from project (recursive): ${projectHandle.name}`);
+            return allShortcuts;
         }
 
         async function getRootScData(rootHandle) {
@@ -1202,7 +1212,8 @@
                 currentDirScData = await getRootScData(currentDirHandle);
             }
             
-            if (currentDirScData.size > 1 || (currentDirScData.size === 1 && !isProject)) {
+            const hasProjectHeaders = Array.from(currentDirScData.keys()).some(k => k !== "");
+            if (hasProjectHeaders || (currentDirScData.size > 0 && !isProject)) {
                 // currentDirHandle looks like a root directory
                 g_rootHandle = currentDirHandle;
                 rootScData = currentDirScData;
@@ -1222,6 +1233,12 @@
             if (projectFolders.length === 0) {
                 alert('No "Edit Thumbnails" folders found in the selected directory or its subdirectories.');
                 return;
+            }
+
+            // Pre-calculate sets for root shortcuts for performance
+            const rootScDataSets = new Map();
+            for (const [key, val] of rootScData.entries()) {
+                rootScDataSets.set(key, new Set(val));
             }
 
             if (g_rootHandle) {
@@ -1246,11 +1263,10 @@
                 const normalizedProjectPath = normalizeProjectKey(project.path);
                 console.log(`Matching project: Name="${normalizedProjectName}", Path="${normalizedProjectPath}"`);
                 
-                let rootProjectShortcuts = rootScData.get(normalizedProjectName) || [];
-                if (rootProjectShortcuts.length === 0 && normalizedProjectPath && normalizedProjectPath !== normalizedProjectName) {
-                    rootProjectShortcuts = rootScData.get(normalizedProjectPath) || [];
+                let rootProjectShortcutsSet = rootScDataSets.get(normalizedProjectName) || new Set();
+                if (rootProjectShortcutsSet.size === 0 && normalizedProjectPath && normalizedProjectPath !== normalizedProjectName) {
+                    rootProjectShortcutsSet = rootScDataSets.get(normalizedProjectPath) || new Set();
                 }
-                const rootProjectShortcutsSet = new Set(rootProjectShortcuts);
                 console.log(`Project: ${project.name}, rootProjectShortcutsSet size: ${rootProjectShortcutsSet.size}`);
 
                 const canvasId = getNextCanvasId();
@@ -1366,7 +1382,27 @@
                     if (!videoFile) continue;
 
                     const hasProjectSc = checkShortcut(videoFile.name, projectScData);
-                    const hasRootSc = checkShortcut(videoFile.name, rootProjectShortcutsSet);
+                    let hasRootSc = checkShortcut(videoFile.name, rootProjectShortcutsSet);
+
+                    // If not found in project-specific group, check if it's in a group named after the subfolder (for nested videos)
+                    if (!hasRootSc && videoFile.subfolder) {
+                        const subfolderLeaf = videoFile.subfolder.split(/[\\/]/).pop();
+                        if (subfolderLeaf) {
+                            const normalizedSubfolderLeaf = normalizeProjectKey(subfolderLeaf);
+                            const subfolderRootScSet = rootScDataSets.get(normalizedSubfolderLeaf);
+                            if (subfolderRootScSet && subfolderRootScSet.size > 0) {
+                                hasRootSc = checkShortcut(videoFile.name, subfolderRootScSet);
+                            }
+                        }
+                    }
+
+                    // Also check the global/ungrouped shortcuts if still not found
+                    if (!hasRootSc) {
+                        const globalRootScSet = rootScDataSets.get("");
+                        if (globalRootScSet && globalRootScSet.size > 0) {
+                            hasRootSc = checkShortcut(videoFile.name, globalRootScSet);
+                        }
+                    }
 
                     if (isShortcutsOnly && hasAnyShortcuts && !hasProjectSc && !hasRootSc) {
                         continue;
@@ -1842,7 +1878,7 @@
         function parseRootScData(scdataText) {
             const lines = scdataText.split('\n').map(line => line.trim()).filter(line => line);
             const data = new Map();
-            let currentSubfolder = null;
+            let currentSubfolder = ""; // Use empty string for flat/ungrouped shortcuts
 
             for (let line of lines) {
                 // In root scdata.txt, project headers are often quoted.
@@ -1860,8 +1896,11 @@
                     if (currentSubfolder && !data.has(currentSubfolder)) {
                         data.set(currentSubfolder, []);
                     }
-                } else if (currentSubfolder && (isShortcut || isVideo || cleanLine.length > 0)) {
-                    // If we have a currentSubfolder, any subsequent line that's not a header is likely a file
+                } else if (cleanLine.length > 0) {
+                    // If no currentSubfolder has been identified yet, it belongs to the "" key
+                    if (!data.has(currentSubfolder)) {
+                        data.set(currentSubfolder, []);
+                    }
                     data.get(currentSubfolder).push(cleanLine.toLowerCase());
                 }
             }
