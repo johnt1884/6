@@ -144,24 +144,20 @@ for /d /r %%D in (sc) do (
     )
 )
 
-:: Top-level ".\sc" (grouped target output with BOTH/ROOT tags)
+:: Top-level ".\sc" (grouped target output — FIXED)
 if exist "%CD%\sc\*.lnk" (
     powershell -NoProfile -Command ^
-        "$out = Join-Path (Get-Location) 'rootdata.txt';" ^
+        "$out = Join-Path (Get-Location) 'scdata.txt';" ^
         "Remove-Item $out -ErrorAction SilentlyContinue;" ^
         "$ws = New-Object -ComObject WScript.Shell;" ^
         "$groups = @{};" ^
         "Get-ChildItem '.\sc' -Filter *.lnk | ForEach-Object {" ^
         "  $t = $ws.CreateShortcut($_.FullName).TargetPath;" ^
         "  if ($t) {" ^
-        "    $folderPath = Split-Path $t -Parent;" ^
-        "    $folder = Split-Path $folderPath -Leaf;" ^
-        "    $fileName = $_.Name;" ^
-        "    $tag = '[ROOT]';" ^
-        "    $subSc = Join-Path $folderPath 'sc';" ^
-        "    if (Test-Path (Join-Path $subSc $fileName)) { $tag = '[BOTH]' };" ^
+        "    $folder = Split-Path (Split-Path $t -Parent) -Leaf;" ^
+        "    $file = Split-Path $t -Leaf;" ^
         "    if (-not $groups.ContainsKey($folder)) { $groups[$folder] = @() };" ^
-        "    $groups[$folder] += \"$fileName $tag\";" ^
+        "    $groups[$folder] += $file;" ^
         "  }" ^
         "};" ^
         "$groups.Keys | Sort-Object | ForEach-Object {" ^
