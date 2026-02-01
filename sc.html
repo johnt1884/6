@@ -11,6 +11,7 @@
             --root-sc-color: green;
             --subfolder-sc-color: yellow;
             --both-sc-color: blue;
+            --delete-sc-color: red;
             --header-text-color: #1c1e21;
             --row-number-color: #333;
             --date-text-color: #555;
@@ -135,6 +136,9 @@
         .thumbnail.selected-both-sc {
             outline: 3px dashed var(--both-sc-color);
         }
+        .thumbnail.selected-delete-sc {
+            outline: 3px dashed var(--delete-sc-color);
+        }
         .thumbnail.selected-shortcut {
             outline: 3px dashed green;
         }
@@ -188,6 +192,10 @@
         }
         #both-sc-btn.active {
             outline: 3px dashed var(--both-sc-color);
+            outline-offset: -3px;
+        }
+        #delete-sc-btn.active {
+            outline: 3px dashed var(--delete-sc-color);
             outline-offset: -3px;
         }
         .project-header {
@@ -347,6 +355,10 @@
                             <input type="color" id="both-sc-color-picker" value="#0000ff">
                         </div>
                         <div class="options-row">
+                            <label for="delete-sc-color-picker">Delete Selection Outline</label>
+                            <input type="color" id="delete-sc-color-picker" value="#ff0000">
+                        </div>
+                        <div class="options-row">
                             <label for="header-text-color-picker">Folder Header Text</label>
                             <input type="color" id="header-text-color-picker" value="#1c1e21">
                         </div>
@@ -402,6 +414,7 @@
                     <button id="root-sc-btn" class="bar-button selection-type-button" style="display: none;"><span class="color-circle"></span>Root SC</button>
                     <button id="subfolder-sc-btn" class="bar-button selection-type-button" style="display: none;"><span class="color-circle"></span>Subfolder SC</button>
                     <button id="both-sc-btn" class="bar-button selection-type-button" style="display: none;"><span class="color-circle"></span>Both</button>
+                    <button id="delete-sc-btn" class="bar-button selection-type-button" style="display: none;"><span class="color-circle"></span>Delete</button>
                 </div>
                 <div>
                     <button id="shortcut-script-btn" class="bar-button">Create Shortcut Script</button>
@@ -448,6 +461,7 @@
         const rootScBtn = document.getElementById('root-sc-btn');
         const subfolderScBtn = document.getElementById('subfolder-sc-btn');
         const bothScBtn = document.getElementById('both-sc-btn');
+        const deleteScBtn = document.getElementById('delete-sc-btn');
         const prevCanvasBtn = document.getElementById('prev-canvas-btn');
         const nextCanvasBtn = document.getElementById('next-canvas-btn');
         const loadMenuBtn = document.getElementById('load-menu-btn');
@@ -518,6 +532,7 @@
                 'root-sc-color': document.getElementById('root-sc-color-picker'),
                 'subfolder-sc-color': document.getElementById('subfolder-sc-color-picker'),
                 'both-sc-color': document.getElementById('both-sc-color-picker'),
+                'delete-sc-color': document.getElementById('delete-sc-color-picker'),
                 'header-text-color': document.getElementById('header-text-color-picker'),
                 'row-number-color': document.getElementById('row-number-color-picker'),
                 'date-text-color': document.getElementById('date-text-color-picker')
@@ -551,6 +566,7 @@
                     'root-sc-color': '#008000',
                     'subfolder-sc-color': '#ffff00',
                     'both-sc-color': '#0000ff',
+                    'delete-sc-color': '#ff0000',
                     'header-text-color': '#1c1e21',
                     'row-number-color': '#333333',
                     'date-text-color': '#555555'
@@ -687,6 +703,8 @@
                 scriptModal.style.display = 'block';
             });
 
+            deleteScBtn.addEventListener('click', () => setSelectionType('delete-sc'));
+
             deleteShortcutsBtn.addEventListener('click', () => {
                 if (shortcutSelections.size === 0) {
                     alert('Please select one or more shortcuts to delete.');
@@ -730,16 +748,19 @@
             const rootCircle = rootScBtn.querySelector('.color-circle');
             const subfolderCircle = subfolderScBtn.querySelector('.color-circle');
             const bothCircle = bothScBtn.querySelector('.color-circle');
+            const deleteCircle = deleteScBtn.querySelector('.color-circle');
             
             if (rootCircle) rootCircle.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--root-sc-color');
             if (subfolderCircle) subfolderCircle.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--subfolder-sc-color');
             if (bothCircle) bothCircle.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--both-sc-color');
+            if (deleteCircle) deleteCircle.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--delete-sc-color');
         }
 
         function updateSelectionTypeButtons() {
             rootScBtn.classList.toggle('active', currentSelectionType === 'root-sc');
             subfolderScBtn.classList.toggle('active', currentSelectionType === 'subfolder-sc');
             bothScBtn.classList.toggle('active', currentSelectionType === 'both-sc');
+            deleteScBtn.classList.toggle('active', currentSelectionType === 'delete-sc');
         }
 
         function renderCanvas(canvasId) {
@@ -811,6 +832,7 @@
             rootScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
             subfolderScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
             bothScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
+            deleteScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
             if (showSelectionButtons) {
                 updateSelectionTypeButtons();
             }
@@ -877,7 +899,7 @@
                 ''
             ];
 
-            if (selectionsToProcess.size > 0) {
+            if (selectionsToProcess.length > 0) {
                  scriptLines.push('# --- Creating Shortcuts ---');
             }
 
@@ -914,6 +936,9 @@
                 if (initial && initial.type === sel.type) {
                     return; // Skip if unchanged
                 }
+
+                const selectionType = sel.type || 'root-sc';
+                if (selectionType === 'delete-sc') return;
 
                 const escapedVideoName = escapePSString(sel.videoName);
                 const escapedProjectPath = escapePSString(sel.projectPath);
@@ -957,6 +982,41 @@
                 }
                 scriptLines.push('');
             });
+
+            // --- File Deletions (Videos and Thumbnails) ---
+            const fileDeletions = selectionsToProcess.filter(sel => sel.type === 'delete-sc');
+            if (fileDeletions.length > 0) {
+                scriptLines.push('# --- Deleting Videos and Thumbnails ---');
+                fileDeletions.forEach(sel => {
+                    const escapedVideoName = escapePSString(sel.videoName);
+                    const escapedProjectPath = escapePSString(sel.projectPath);
+                    const escapedSubfolder = escapePSString(sel.subfolder);
+
+                    let videoPathVar = `$PSScriptRoot`;
+                    if (sel.projectPath) videoPathVar = `(Join-Path -Path ${videoPathVar} -ChildPath '${escapedProjectPath}')`;
+                    if (sel.subfolder) videoPathVar = `(Join-Path -Path ${videoPathVar} -ChildPath '${escapedSubfolder}')`;
+                    scriptLines.push(`$videoPath = Join-Path -Path ${videoPathVar} -ChildPath '${escapedVideoName}'`);
+
+                    scriptLines.push(`if (Test-Path -LiteralPath $videoPath) {`);
+                    scriptLines.push(`    Remove-Item -LiteralPath $videoPath -Force`);
+                    scriptLines.push(`    Write-Host "Deleted video: ${escapedVideoName}"`);
+                    scriptLines.push(`}`);
+
+                    const thumbBase = sel.videoName.substring(0, sel.videoName.lastIndexOf('.'));
+                    const escapedThumbBase = escapePSString(thumbBase);
+
+                    scriptLines.push(`$projectPath = Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}'`);
+                    scriptLines.push(`$thumbDirs = @('Thumbnails', 'Edit Thumbnails')`);
+                    scriptLines.push(`foreach ($dirName in $thumbDirs) {`);
+                    scriptLines.push(`    $dirPath = Join-Path -Path $projectPath -ChildPath $dirName`);
+                    scriptLines.push(`    if (Test-Path -LiteralPath $dirPath) {`);
+                    scriptLines.push(`        Get-ChildItem -Path $dirPath -Filter "${escapedThumbBase}*" | Remove-Item -Force`);
+                    scriptLines.push(`        Write-Host "Deleted thumbnails for ${escapedVideoName} in $dirName"`);
+                    scriptLines.push(`    }`);
+                    scriptLines.push(`}`);
+                    scriptLines.push('');
+                });
+            }
 
             // --- Deletions ---
             const deletions = [];
@@ -1075,11 +1135,16 @@
 
         async function getRootScData(rootHandle) {
             try {
-                const handle = await rootHandle.getFileHandle('scdata.txt');
+                let handle;
+                try {
+                    handle = await rootHandle.getFileHandle('rootdata.txt');
+                } catch (e) {
+                    handle = await rootHandle.getFileHandle('scdata.txt');
+                }
                 const file = await handle.getFile();
                 const text = await file.text();
-                const data = parseRootScData(text); // Map<subfolder, Array<filename>>
-                console.log(`Loaded root scdata.txt from ${rootHandle.name}. Projects found: ${data.size}`);
+                const data = parseRootScData(text);
+                console.log(`Loaded root data from ${rootHandle.name}. Projects found: ${data.size}`);
                 return data;
             } catch (e) {
                 return new Map();
@@ -1100,7 +1165,14 @@
                 namesToCheck.push(baseName.toLowerCase() + " - shortcut.lnk");
                 namesToCheck.push(baseName.toLowerCase());
             }
-            return namesToCheck.some(n => scDataSet.has(n));
+            if (scDataSet instanceof Set) {
+                return namesToCheck.some(n => scDataSet.has(n));
+            } else if (scDataSet instanceof Map) {
+                for (const n of namesToCheck) {
+                    if (scDataSet.has(n)) return scDataSet.get(n);
+                }
+            }
+            return false;
         }
 
         // Function to safely read and parse scdate.txt
@@ -1235,10 +1307,10 @@
                 return;
             }
 
-            // Pre-calculate sets for root shortcuts for performance
+            // Pre-calculate sets/maps for root shortcuts for performance
             const rootScDataSets = new Map();
             for (const [key, val] of rootScData.entries()) {
-                rootScDataSets.set(key, new Set(val));
+                rootScDataSets.set(key, val);
             }
 
             if (g_rootHandle) {
@@ -1382,27 +1454,29 @@
                     if (!videoFile) continue;
 
                     const hasProjectSc = checkShortcut(videoFile.name, projectScData);
-                    let hasRootSc = checkShortcut(videoFile.name, rootProjectShortcutsSet);
+                    let rootScEntry = checkShortcut(videoFile.name, rootProjectShortcutsSet);
 
                     // If not found in project-specific group, check if it's in a group named after the subfolder (for nested videos)
-                    if (!hasRootSc && videoFile.subfolder) {
+                    if (!rootScEntry && videoFile.subfolder) {
                         const subfolderLeaf = videoFile.subfolder.split(/[\\/]/).pop();
                         if (subfolderLeaf) {
                             const normalizedSubfolderLeaf = normalizeProjectKey(subfolderLeaf);
                             const subfolderRootScSet = rootScDataSets.get(normalizedSubfolderLeaf);
-                            if (subfolderRootScSet && subfolderRootScSet.size > 0) {
-                                hasRootSc = checkShortcut(videoFile.name, subfolderRootScSet);
+                            if (subfolderRootScSet) {
+                                rootScEntry = checkShortcut(videoFile.name, subfolderRootScSet);
                             }
                         }
                     }
                     
                     // Also check the global/ungrouped shortcuts if still not found
-                    if (!hasRootSc) {
+                    if (!rootScEntry) {
                         const globalRootScSet = rootScDataSets.get("");
-                        if (globalRootScSet && globalRootScSet.size > 0) {
-                            hasRootSc = checkShortcut(videoFile.name, globalRootScSet);
+                        if (globalRootScSet) {
+                            rootScEntry = checkShortcut(videoFile.name, globalRootScSet);
                         }
                     }
+
+                    const hasRootSc = rootScEntry !== false;
 
                     if (isShortcutsOnly && hasAnyShortcuts && !hasProjectSc && !hasRootSc) {
                         continue;
@@ -1431,9 +1505,16 @@
                     if (hasRootSc) console.log(`Match found in root scdata for: ${videoFile.name}`);
 
                     let initialShortcutType = '';
-                    if (hasProjectSc && hasRootSc) initialShortcutType = 'both-sc';
-                    else if (hasProjectSc) initialShortcutType = 'subfolder-sc';
-                    else if (hasRootSc) initialShortcutType = 'root-sc';
+                    if (rootScEntry && typeof rootScEntry === 'string') {
+                        if (rootScEntry === 'BOTH') initialShortcutType = 'both-sc';
+                        else if (rootScEntry === 'ROOT') initialShortcutType = 'root-sc';
+                    }
+
+                    if (!initialShortcutType) {
+                        if (hasProjectSc && hasRootSc) initialShortcutType = 'both-sc';
+                        else if (hasProjectSc) initialShortcutType = 'subfolder-sc';
+                        else if (hasRootSc) initialShortcutType = 'root-sc';
+                    }
 
                     if (initialShortcutType) {
                         const key = project.path + '|' + videoFile.name;
@@ -1881,12 +1962,10 @@
             let currentSubfolder = ""; // Use empty string for flat/ungrouped shortcuts
 
             for (let line of lines) {
-                // In root scdata.txt, project headers are often quoted.
+                // In root scdata.txt/rootdata.txt, project headers are often quoted.
                 const isQuoted = (line.startsWith('"') && line.endsWith('"')) || (line.startsWith("'") && line.endsWith("'"));
                 const cleanLine = line.replace(/^["']|["']$/g, '').trim();
                 
-                // shortcuts in root scdata.txt (from scmanager.bat) might NOT have .lnk extension.
-                // But they usually have a video extension.
                 const isShortcut = cleanLine.toLowerCase().endsWith('.lnk') || cleanLine.toLowerCase().endsWith('.ink') || cleanLine.toLowerCase().endsWith(' - shortcut.lnk');
                 const isVideo = cleanLine.toLowerCase().match(/\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|mpg|mpeg)$/i);
 
@@ -1894,14 +1973,25 @@
                     // It's a project name
                     currentSubfolder = normalizeProjectKey(cleanLine);
                     if (currentSubfolder && !data.has(currentSubfolder)) {
-                        data.set(currentSubfolder, []);
+                        data.set(currentSubfolder, new Map());
                     }
                 } else if (cleanLine.length > 0) {
                     // If no currentSubfolder has been identified yet, it belongs to the "" key
                     if (!data.has(currentSubfolder)) {
-                        data.set(currentSubfolder, []);
+                        data.set(currentSubfolder, new Map());
                     }
-                    data.get(currentSubfolder).push(cleanLine.toLowerCase());
+
+                    let entry = cleanLine;
+                    let tag = "";
+                    if (cleanLine.endsWith('[BOTH]')) {
+                        tag = "BOTH";
+                        entry = cleanLine.substring(0, cleanLine.length - 6).trim();
+                    } else if (cleanLine.endsWith('[ROOT]')) {
+                        tag = "ROOT";
+                        entry = cleanLine.substring(0, cleanLine.length - 6).trim();
+                    }
+
+                    data.get(currentSubfolder).set(entry.toLowerCase(), tag);
                 }
             }
             return data;
