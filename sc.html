@@ -694,6 +694,7 @@
                     const dirHandle = await window.showDirectoryPicker();
                     currentDirHandle = dirHandle;
                     currentMode = 'playlist';
+                    setSelectionType('both-sc');
                     setVisibilityForMode(currentMode);
                     await renderPlaylistMode();
                 } catch (err) {
@@ -840,7 +841,7 @@
             canvasSelect.style.display = (isDirectory || isSc || isRootSc || isScNew || isLatestVideos || isPlaylist) ? 'inline-block' : 'none';
             groupSelector.style.display = 'none';
 
-            const showSelectionButtons = isLatestVideos || isPlaylist || isDirectory || isSc || isRootSc || isScNew;
+            const showSelectionButtons = (isLatestVideos || isDirectory || isSc || isRootSc || isScNew) && !isPlaylist;
             if (rootScBtn) rootScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
             if (subfolderScBtn) subfolderScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
             if (bothScBtn) bothScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
@@ -1807,7 +1808,28 @@
                     if (videoFiles.length === 0) continue;
 
                     videoFiles.sort((a, b) => a.name.localeCompare(b.name));
-                    const firstVideo = videoFiles[0];
+
+                    let selectedVideo = videoFiles[0];
+                    try {
+                        const scDirHandle = await project.handle.getDirectoryHandle('sc');
+                        const shortcutNames = new Set();
+                        for await (const entry of scDirHandle.values()) {
+                            if (entry.kind === 'file') {
+                                shortcutNames.add(entry.name.toLowerCase());
+                            }
+                        }
+
+                        for (const v of videoFiles) {
+                            if (checkShortcut(v.name, shortcutNames)) {
+                                selectedVideo = v;
+                                break;
+                            }
+                        }
+                    } catch (e) {
+                        // sc folder doesn't exist or is inaccessible
+                    }
+
+                    const firstVideo = selectedVideo;
                     const firstVideoFile = await firstVideo.getFile();
                     const videoDate = new Date(firstVideoFile.lastModified).toLocaleString();
                     const videoBaseName = firstVideo.name.substring(0, firstVideo.name.lastIndexOf('.'));
