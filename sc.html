@@ -956,7 +956,8 @@
 
                 if (selectionType === 'subfolder-sc' || selectionType === 'both-sc') {
                     const scDirPath = `Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}') -ChildPath 'sc'`;
-                    createShortcut(`Join-Path -Path (${scDirPath}) -ChildPath ('${escapedVideoName}' + '.lnk')`, `Created subfolder shortcut: ${escapedProjectPath}\\${escapedVideoName}`);
+                    const logPath = (escapedProjectPath ? escapedProjectPath + '\\' : '') + escapedVideoName;
+                    createShortcut(`Join-Path -Path (${scDirPath}) -ChildPath ('${escapedVideoName}' + '.lnk')`, `Created subfolder shortcut: ${logPath}`);
                 }
                 scriptLines.push('');
             });
@@ -976,7 +977,8 @@
                 if (initiallyInSubfolder && !currentlyInSubfolder) {
                     const subfolderScPath = `(Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}') -ChildPath 'sc')`;
                     const fullScPath = `(Join-Path -Path ${subfolderScPath} -ChildPath ('${escapedVideoName}' + '.lnk'))`;
-                    deletions.push(`if (Test-Path -LiteralPath ${fullScPath}) { Remove-Item -LiteralPath ${fullScPath}; Write-Host "Deleted subfolder shortcut: ${escapedProjectPath}\\${escapedVideoName}" }`);
+                    const logPath = (escapedProjectPath ? escapedProjectPath + '\\' : '') + escapedVideoName;
+                    deletions.push(`if (Test-Path -LiteralPath ${fullScPath}) { Remove-Item -LiteralPath ${fullScPath}; Write-Host "Deleted subfolder shortcut: ${logPath}" }`);
                 }
 
                 const initiallyInRoot = initial.type === 'root-sc' || initial.type === 'both-sc';
@@ -1226,6 +1228,19 @@
                 return;
             }
 
+            if (g_rootHandle) {
+                for (const project of projectFolders) {
+                    try {
+                        const relativePathParts = await g_rootHandle.resolve(project.handle);
+                        if (relativePathParts) {
+                            project.path = relativePathParts.join('\\');
+                        }
+                    } catch (e) {
+                        console.warn(`Could not resolve path for ${project.name} relative to root.`);
+                    }
+                }
+            }
+
             const allImageLoadPromises = [];
             for (const project of projectFolders) {
                 console.log(`Processing project: ${project.name} (Path: ${project.path})`);
@@ -1356,6 +1371,10 @@
                     const hasRootSc = checkShortcut(videoFile.name, rootProjectShortcutsSet);
 
                     if (isShortcutsOnly && hasAnyShortcuts && !hasProjectSc && !hasRootSc) {
+                        continue;
+                    }
+
+                    if (isNewOnly && mostRecentShortcutTime && videoFile.lastModified <= mostRecentShortcutTime) {
                         continue;
                     }
 
