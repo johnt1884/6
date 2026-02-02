@@ -2006,7 +2006,7 @@
             if (rootScSelections.length > 0) {
                 scriptLines.push("# --- Processing Root SC Selections ---");
                 scriptLines.push(`if (Test-Path -LiteralPath $rootScFolder) {`);
-                scriptLines.push(`    $shortcuts = Get-ChildItem -Path $rootScFolder -Filter *.lnk`);
+                scriptLines.push(`    $shortcuts = Get-ChildItem -LiteralPath $rootScFolder -Filter *.lnk`);
                 scriptLines.push(`    foreach ($shortcutFile in $shortcuts) {`);
                 scriptLines.push(`        $shortcut = $wshell.CreateShortcut($shortcutFile.FullName)`);
                 scriptLines.push(`        $targetPath = $shortcut.TargetPath`);
@@ -2014,7 +2014,7 @@
                 rootScSelections.forEach(sel => {
                     const escapedProjectPath = escapePSString(sel.projectPath);
                     scriptLines.push(`        $projectCheckPath = Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}'`);
-                    scriptLines.push(`        if ($targetPath -like "$projectCheckPath*") {`);
+                    scriptLines.push(`        if ($targetPath.StartsWith($projectCheckPath + [IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) -or $targetPath -eq $projectCheckPath) {`);
                     scriptLines.push(`            if ($playlistContent -notcontains $targetPath) {`);
                     scriptLines.push(`                $playlistContent.Add($targetPath)`);
                     scriptLines.push(`                Write-Host "Added to playlist (root): $($shortcutFile.Name)"`);
@@ -2037,7 +2037,7 @@
                     }
                     scriptLines.push(`    $projectPath = ${projectPathVar}`);
                     scriptLines.push(`    if (Test-Path -LiteralPath $projectPath) {`);
-                    scriptLines.push(`        Get-ChildItem -Path $projectPath -Filter *.lnk -Recurse | Where-Object { $_.FullName -notlike "$rootScFolder*" } | ForEach-Object {`);
+                    scriptLines.push(`        Get-ChildItem -LiteralPath $projectPath -Filter *.lnk -Recurse | Where-Object { -not $_.FullName.StartsWith($rootScFolder + [IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object {`);
                     scriptLines.push(`            $shortcut = $wshell.CreateShortcut($_.FullName)`);
                     scriptLines.push(`            $targetPath = $shortcut.TargetPath`);
                     scriptLines.push(`            if ($playlistContent -notcontains $targetPath) {`);
