@@ -6,15 +6,15 @@
     <title>Shortcuts</title>
      <style>
         :root {
-            --bg-color: #EBEBEB;
-            --toolbar-color: #1877f2;
-            --root-sc-color: green;
-            --subfolder-sc-color: yellow;
-            --both-sc-color: blue;
+            --bg-color: #3d0021;
+            --toolbar-color: #1c1c1c;
+            --root-sc-color: #ffe11f;
+            --subfolder-sc-color: #00ff1e;
+            --both-sc-color: #009dff;
             --delete-sc-color: red;
-            --header-text-color: #1c1e21;
-            --row-number-color: #333;
-            --date-text-color: #555;
+            --header-text-color: #ffffff;
+            --row-number-color: #ffffff;
+            --date-text-color: #ffffff;
         }
         html, body {
             height: 100%;
@@ -308,6 +308,27 @@
             margin-right: 8px;
             display: inline-block;
         }
+        .playlist-nav-btn {
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            cursor: pointer;
+            padding: 5px 10px;
+            font-size: 18px;
+            border-radius: 4px;
+            margin: 0 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .playlist-nav-btn:hover {
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+        .playlist-nav-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -336,23 +357,23 @@
                     <div id="options-dropdown" class="dropdown-content">
                         <div class="options-row">
                             <label for="bg-color-picker">Page Background</label>
-                            <input type="color" id="bg-color-picker" value="#EBEBEB">
+                            <input type="color" id="bg-color-picker" value="#3d0021">
                         </div>
                         <div class="options-row">
                             <label for="toolbar-color-picker">Toolbars</label>
-                            <input type="color" id="toolbar-color-picker" value="#1877f2">
+                            <input type="color" id="toolbar-color-picker" value="#1c1c1c">
                         </div>
                         <div class="options-row">
                             <label for="root-sc-color-picker">Root SC Outline</label>
-                            <input type="color" id="root-sc-color-picker" value="#008000">
+                            <input type="color" id="root-sc-color-picker" value="#ffe11f">
                         </div>
                         <div class="options-row">
                             <label for="subfolder-sc-color-picker">Subfolder SC Outline</label>
-                            <input type="color" id="subfolder-sc-color-picker" value="#ffff00">
+                            <input type="color" id="subfolder-sc-color-picker" value="#00ff1e">
                         </div>
                         <div class="options-row">
                             <label for="both-sc-color-picker">Both SC Outline</label>
-                            <input type="color" id="both-sc-color-picker" value="#0000ff">
+                            <input type="color" id="both-sc-color-picker" value="#009dff">
                         </div>
                         <div class="options-row">
                             <label for="delete-sc-color-picker">Delete Selection Outline</label>
@@ -360,15 +381,15 @@
                         </div>
                         <div class="options-row">
                             <label for="header-text-color-picker">Folder Header Text</label>
-                            <input type="color" id="header-text-color-picker" value="#1c1e21">
+                            <input type="color" id="header-text-color-picker" value="#ffffff">
                         </div>
                         <div class="options-row">
                             <label for="row-number-color-picker">Show Numbers Header Text</label>
-                            <input type="color" id="row-number-color-picker" value="#333333">
+                            <input type="color" id="row-number-color-picker" value="#ffffff">
                         </div>
                         <div class="options-row">
                             <label for="date-text-color-picker">Date Text Color</label>
-                            <input type="color" id="date-text-color-picker" value="#555555">
+                            <input type="color" id="date-text-color-picker" value="#ffffff">
                         </div>
                         <button id="revert-defaults-btn" style="width: 100%; text-align: center; border-top: 1px solid #ccc; font-weight: bold;">Revert to Default Colors</button>
                     </div>
@@ -566,15 +587,15 @@
             if (revertDefaultsBtn) {
                 revertDefaultsBtn.addEventListener('click', () => {
                     const defaults = {
-                        'bg-color': '#EBEBEB',
-                        'toolbar-color': '#1877f2',
-                        'root-sc-color': '#008000',
-                        'subfolder-sc-color': '#ffff00',
-                        'both-sc-color': '#0000ff',
+                        'bg-color': '#3d0021',
+                        'toolbar-color': '#1c1c1c',
+                        'root-sc-color': '#ffe11f',
+                        'subfolder-sc-color': '#00ff1e',
+                        'both-sc-color': '#009dff',
                         'delete-sc-color': '#ff0000',
-                        'header-text-color': '#1c1e21',
-                        'row-number-color': '#333333',
-                        'date-text-color': '#555555'
+                        'header-text-color': '#ffffff',
+                        'row-number-color': '#ffffff',
+                        'date-text-color': '#ffffff'
                     };
                     Object.keys(defaults).forEach(id => {
                         const color = defaults[id];
@@ -1880,7 +1901,7 @@
 
                     videoFiles.sort((a, b) => a.name.localeCompare(b.name));
 
-                    let selectedVideo = videoFiles[0];
+                    let candidateVideos = [];
                     try {
                         const scDirHandle = await project.handle.getDirectoryHandle('sc');
                         const shortcutNames = new Set();
@@ -1892,34 +1913,17 @@
 
                         for (const v of videoFiles) {
                             if (checkShortcut(v.name, shortcutNames)) {
-                                selectedVideo = v;
-                                break;
+                                candidateVideos.push(v);
+                                if (candidateVideos.length >= 5) break;
                             }
                         }
                     } catch (e) {
                         // sc folder doesn't exist or is inaccessible
                     }
 
-                    const firstVideo = selectedVideo;
-                    const firstVideoFile = await firstVideo.getFile();
-                    const videoDate = new Date(firstVideoFile.lastModified).toLocaleString();
-                    const videoBaseName = firstVideo.name.substring(0, firstVideo.name.lastIndexOf('.'));
-
-                    const editDirHandle = await project.handle.getDirectoryHandle('Edit Thumbnails');
-                    const thumbnailFiles = [];
-                    for await (const entry of editDirHandle.values()) {
-                        if (entry.kind === 'file' && entry.name.startsWith(videoBaseName)) {
-                            thumbnailFiles.push(await entry.getFile());
-                        }
+                    if (candidateVideos.length === 0) {
+                        candidateVideos = videoFiles.slice(0, 5);
                     }
-
-                    if (thumbnailFiles.length === 0) continue;
-
-                    thumbnailFiles.sort((a, b) => {
-                        const aNum = parseInt(a.name.substring(a.name.lastIndexOf('_') + 1));
-                        const bNum = parseInt(b.name.substring(b.name.lastIndexOf('_') + 1));
-                        return aNum - bNum;
-                    });
 
                     const header = document.createElement('h2');
                     header.className = 'project-header';
@@ -1930,9 +1934,22 @@
                     rowDiv.className = 'landscape-row';
                     rowDiv.dataset.projectPath = project.path;
 
+                    const navContainer = document.createElement('div');
+                    navContainer.className = 'playlist-nav-container';
+                    rowDiv.appendChild(navContainer);
+
+                    const prevBtn = document.createElement('button');
+                    prevBtn.className = 'playlist-nav-btn';
+                    prevBtn.textContent = '◀';
+                    navContainer.appendChild(prevBtn);
+
+                    const nextBtn = document.createElement('button');
+                    nextBtn.className = 'playlist-nav-btn';
+                    nextBtn.textContent = '▶';
+                    navContainer.appendChild(nextBtn);
+
                     const dateInfo = document.createElement('div');
                     dateInfo.className = 'date-info';
-                    dateInfo.textContent = `Created: ${videoDate}`;
                     rowDiv.appendChild(dateInfo);
 
                     const thumbnailsContainer = document.createElement('div');
@@ -1940,6 +1957,69 @@
                     rowDiv.appendChild(thumbnailsContainer);
 
                     canvasElements.push(rowDiv);
+
+                    let currentIndex = parseInt(localStorage.getItem(`playlist-thumb-index-${project.path}`)) || 0;
+                    if (currentIndex >= candidateVideos.length) currentIndex = 0;
+
+                    const updateDisplayedVideo = async (index) => {
+                        const video = candidateVideos[index];
+                        const videoFile = await video.getFile();
+                        dateInfo.textContent = `Created: ${new Date(videoFile.lastModified).toLocaleString()}`;
+
+                        const videoBaseName = video.name.substring(0, video.name.lastIndexOf('.'));
+                        const editDirHandle = await project.handle.getDirectoryHandle('Edit Thumbnails');
+                        const thumbnailFiles = [];
+                        for await (const entry of editDirHandle.values()) {
+                            if (entry.kind === 'file' && entry.name.startsWith(videoBaseName)) {
+                                thumbnailFiles.push(await entry.getFile());
+                            }
+                        }
+
+                        thumbnailFiles.sort((a, b) => {
+                            const aNum = parseInt(a.name.substring(a.name.lastIndexOf('_') + 1));
+                            const bNum = parseInt(b.name.substring(b.name.lastIndexOf('_') + 1));
+                            return aNum - bNum;
+                        });
+
+                        thumbnailsContainer.innerHTML = '';
+                        const selectionKey = project.path + '|playlist_entry';
+                        const existingSelection = shortcutSelections.get(selectionKey);
+
+                        thumbnailFiles.forEach(file => {
+                            const img = new Image();
+                            img.className = 'thumbnail';
+                            img.dataset.projectPath = project.path;
+                            if (existingSelection) {
+                                img.classList.add('selected-' + existingSelection.type);
+                            }
+                            thumbnailsContainer.appendChild(img);
+
+                            img.onload = () => {
+                                img.dataset.originalWidth = img.width;
+                                img.dataset.originalHeight = img.height;
+                                layoutLandscapeThumbnails();
+                            };
+
+                            const url = URL.createObjectURL(file);
+                            createdObjectUrls.push(url);
+                            img.src = url;
+                        });
+                        localStorage.setItem(`playlist-thumb-index-${project.path}`, index);
+                    };
+
+                    await updateDisplayedVideo(currentIndex);
+
+                    prevBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        currentIndex = (currentIndex - 1 + candidateVideos.length) % candidateVideos.length;
+                        updateDisplayedVideo(currentIndex);
+                    };
+
+                    nextBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        currentIndex = (currentIndex + 1) % candidateVideos.length;
+                        updateDisplayedVideo(currentIndex);
+                    };
 
                     rowDiv.addEventListener('click', () => {
                         const selectionData = { projectPath: project.path, type: currentSelectionType };
@@ -1957,27 +2037,6 @@
                             allThumbnailsInRow.forEach(t => t.classList.add('selected-' + currentSelectionType));
                             shortcutSelections.set(key, selectionData);
                         }
-                    });
-
-                    thumbnailFiles.forEach(file => {
-                        const img = new Image();
-                        img.className = 'thumbnail';
-                        img.dataset.projectPath = project.path;
-                        thumbnailsContainer.appendChild(img);
-
-                        const promise = new Promise((resolve, reject) => {
-                            img.onload = () => {
-                                img.dataset.originalWidth = img.width;
-                                img.dataset.originalHeight = img.height;
-                                resolve();
-                            };
-                            img.onerror = reject;
-                        });
-
-                        const url = URL.createObjectURL(file);
-                        createdObjectUrls.push(url);
-                        img.src = url;
-                        allImageLoadPromises.push(promise);
                     });
 
                 } catch (e) {
