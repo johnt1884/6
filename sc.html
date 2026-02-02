@@ -1125,7 +1125,7 @@
         }
 
         function normalizeProjectKey(key) {
-            return key.trim().replace(/^[\\/"']+|[\\/"']+$/g, '').replace(/\\/g, '/').toLowerCase();
+            return key.trim().replace(/^[\\/"'\[\]]+|[\\/"'\[\]]+$/g, '').replace(/\\/g, '/').toLowerCase();
         }
 
         async function getScDataForProject(projectHandle) {
@@ -1791,10 +1791,33 @@
             }
 
             const projectFolders = [];
-            for await (const entry of currentDirHandle.values()) {
-                if (entry.kind === 'directory') {
-                    projectFolders.push({ handle: entry, path: entry.name, name: entry.name });
+            async function findProjectFolders(dirHandle, currentPath = '') {
+                for await (const entry of dirHandle.values()) {
+                    if (entry.kind === 'directory') {
+                        const newPath = currentPath ? `${currentPath}\\${entry.name}` : entry.name;
+                        try {
+                            await findDirectoryHandleByName(entry, 'Edit Thumbnails');
+                            projectFolders.push({
+                                handle: entry,
+                                path: newPath,
+                                name: entry.name
+                            });
+                        } catch (e) {
+                            await findProjectFolders(entry, newPath);
+                        }
+                    }
                 }
+            }
+
+            try {
+                await findDirectoryHandleByName(currentDirHandle, 'Edit Thumbnails');
+                projectFolders.push({
+                    handle: currentDirHandle,
+                    path: '',
+                    name: currentDirHandle.name
+                });
+            } catch (e) {
+                await findProjectFolders(currentDirHandle);
             }
 
             if (g_rootHandle) {
@@ -1813,7 +1836,7 @@
             projectFolders.sort((a, b) => a.name.localeCompare(b.name));
 
             if (projectFolders.length === 0) {
-                alert('No subdirectories found.');
+                alert('No "Edit Thumbnails" folders found.');
                 return;
             }
 
@@ -1824,28 +1847,45 @@
             for (const project of projectFolders) {
                 try {
                     let subfolderScCount = 0;
-                    try {
-                        const scDirHandle = await project.handle.getDirectoryHandle('sc');
-                        for await (const entry of scDirHandle.values()) {
+                    async function countShortcutsRecursive(dirHandle) {
+                        let count = 0;
+                        for await (const entry of dirHandle.values()) {
                             if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.lnk')) {
-                                subfolderScCount++;
+                                count++;
+                            } else if (entry.kind === 'directory') {
+                                count += await countShortcutsRecursive(entry);
                             }
                         }
+                        return count;
+                    }
+
+                    try {
+                        const scDirHandle = await project.handle.getDirectoryHandle('sc');
+                        subfolderScCount = await countShortcutsRecursive(scDirHandle);
                     } catch (e) {}
 
                     const normalizedProjectName = normalizeProjectKey(project.name);
                     const normalizedProjectPath = normalizeProjectKey(project.path);
-                    let rootProjectShortcutsMap = rootScData.get(normalizedProjectName) || new Map();
-                    if (rootProjectShortcutsMap.size === 0 && normalizedProjectPath && normalizedProjectPath !== normalizedProjectName) {
-                        rootProjectShortcutsMap = rootScData.get(normalizedProjectPath) || new Map();
+
+                    // Search in rootScData for a matching key
+                    let rootProjectShortcutsMap = new Map();
+                    for (let [key, val] of rootScData.entries()) {
+                        const normalizedKey = normalizeProjectKey(key);
+                        if (normalizedKey === normalizedProjectName || normalizedKey === normalizedProjectPath) {
+                            rootProjectShortcutsMap = val;
+                            break;
+                        }
                     }
                     const rootScCount = rootProjectShortcutsMap.size;
 
                     const videoFiles = [];
-                    async function findVideos(dirHandle) {
+                    async function findVideos(dirHandle, subfolder = '') {
                         for await (const entry of dirHandle.values()) {
                             if (entry.kind === 'file' && entry.name.match(/\.(mp4|avi|mov|mkv)$/i)) {
+                                entry.subfolder = subfolder;
                                 videoFiles.push(entry);
+                            } else if (entry.kind === 'directory' && entry.name.toLowerCase() !== 'edit thumbnails' && entry.name.toLowerCase() !== 'thumbnails' && entry.name.toLowerCase() !== 'sc') {
+                                await findVideos(entry, subfolder ? `${subfolder}\\${entry.name}` : entry.name);
                             }
                         }
                     }
@@ -1989,8 +2029,8 @@
                 rootScSelections.forEach(sel => {
                     const escapedProjectPath = escapePSString(sel.projectPath);
                     scriptLines.push(`        $projectCheckPath = Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}'`);
-                    scriptLines.push(`        if ($targetPath.StartsWith($projectCheckPath)) {`);
-                    scriptLines.push(`            if (-not $playlistContent.Contains($targetPath)) {`);
+                    scriptLines.push(`        if ($targetPath -like "$projectCheckPath*") {`);
+                    scriptLines.push(`            if ($playlistContent -notcontains $targetPath) {`);
                     scriptLines.push(`                $playlistContent.Add($targetPath)`);
                     scriptLines.push(`                Write-Host "Added to playlist (root): $($shortcutFile.Name)"`);
                     scriptLines.push(`            }`);
@@ -2008,10 +2048,10 @@
                     const escapedProjectPath = escapePSString(sel.projectPath);
                     scriptLines.push(`    $subfolderScPath = Join-Path -Path $PSScriptRoot -ChildPath (Join-Path -Path '${escapedProjectPath}' -ChildPath 'sc')`);
                     scriptLines.push(`    if (Test-Path -LiteralPath $subfolderScPath) {`);
-                    scriptLines.push(`        Get-ChildItem -Path $subfolderScPath -Filter *.lnk | ForEach-Object {`);
+                    scriptLines.push(`        Get-ChildItem -Path $subfolderScPath -Filter *.lnk -Recurse | ForEach-Object {`);
                     scriptLines.push(`            $shortcut = $wshell.CreateShortcut($_.FullName)`);
                     scriptLines.push(`            $targetPath = $shortcut.TargetPath`);
-                    scriptLines.push(`            if (-not $playlistContent.Contains($targetPath)) {`);
+                    scriptLines.push(`            if ($playlistContent -notcontains $targetPath) {`);
                     scriptLines.push(`                $playlistContent.Add($targetPath)`);
                     scriptLines.push(`                Write-Host "Added to playlist (subfolder): $($_.Name)"`);
                     scriptLines.push(`            }`);
