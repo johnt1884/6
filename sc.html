@@ -841,11 +841,11 @@
             canvasSelect.style.display = (isDirectory || isSc || isRootSc || isScNew || isLatestVideos || isPlaylist) ? 'inline-block' : 'none';
             groupSelector.style.display = 'none';
 
-            const showSelectionButtons = (isLatestVideos || isDirectory || isSc || isRootSc || isScNew) && !isPlaylist;
+            const showSelectionButtons = isLatestVideos || isDirectory || isSc || isRootSc || isScNew || isPlaylist;
             if (rootScBtn) rootScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
             if (subfolderScBtn) subfolderScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
             if (bothScBtn) bothScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
-            if (deleteScBtn) deleteScBtn.style.display = showSelectionButtons ? 'inline-block' : 'none';
+            if (deleteScBtn) deleteScBtn.style.display = (showSelectionButtons && !isPlaylist) ? 'inline-block' : 'none';
             if (showSelectionButtons) {
                 updateSelectionTypeButtons();
             }
@@ -1776,12 +1776,40 @@
             createdObjectUrls.forEach(URL.revokeObjectURL);
             createdObjectUrls = [];
 
+            if (!g_rootHandle) {
+                if (confirm("Would you like to select the root folder to enable root shortcut detection?")) {
+                    try {
+                        const rootHandle = await window.showDirectoryPicker();
+                        g_rootHandle = rootHandle;
+                    } catch (e) {}
+                }
+            }
+
+            let rootScData = new Map();
+            if (g_rootHandle) {
+                rootScData = await getRootScData(g_rootHandle);
+            }
+
             const projectFolders = [];
             for await (const entry of currentDirHandle.values()) {
                 if (entry.kind === 'directory') {
                     projectFolders.push({ handle: entry, path: entry.name, name: entry.name });
                 }
             }
+
+            if (g_rootHandle) {
+                for (const project of projectFolders) {
+                    try {
+                        const relativePathParts = await g_rootHandle.resolve(project.handle);
+                        if (relativePathParts) {
+                            project.path = relativePathParts.join('\\');
+                        }
+                    } catch (e) {
+                        console.warn(`Could not resolve path for ${project.name} relative to root.`);
+                    }
+                }
+            }
+
             projectFolders.sort((a, b) => a.name.localeCompare(b.name));
 
             if (projectFolders.length === 0) {
@@ -1795,6 +1823,24 @@
 
             for (const project of projectFolders) {
                 try {
+                    let subfolderScCount = 0;
+                    try {
+                        const scDirHandle = await project.handle.getDirectoryHandle('sc');
+                        for await (const entry of scDirHandle.values()) {
+                            if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.lnk')) {
+                                subfolderScCount++;
+                            }
+                        }
+                    } catch (e) {}
+
+                    const normalizedProjectName = normalizeProjectKey(project.name);
+                    const normalizedProjectPath = normalizeProjectKey(project.path);
+                    let rootProjectShortcutsMap = rootScData.get(normalizedProjectName) || new Map();
+                    if (rootProjectShortcutsMap.size === 0 && normalizedProjectPath && normalizedProjectPath !== normalizedProjectName) {
+                        rootProjectShortcutsMap = rootScData.get(normalizedProjectPath) || new Map();
+                    }
+                    const rootScCount = rootProjectShortcutsMap.size;
+
                     const videoFiles = [];
                     async function findVideos(dirHandle) {
                         for await (const entry of dirHandle.values()) {
@@ -1852,7 +1898,7 @@
 
                     const header = document.createElement('h2');
                     header.className = 'project-header';
-                    header.textContent = `${project.name} (1 video)`;
+                    header.textContent = `${project.name} (${rootScCount} root shortcuts | ${subfolderScCount} subfolder shortcuts)`;
                     canvasElements.push(header);
 
                     const rowDiv = document.createElement('div');
