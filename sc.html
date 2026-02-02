@@ -1995,7 +1995,23 @@
                 '$PSScriptRoot = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition',
                 '$playlistContent = New-Object System.Collections.Generic.List[string]',
                 '$wshell = New-Object -ComObject WScript.Shell',
-                "$rootScFolder = Join-Path -Path $PSScriptRoot -ChildPath 'sc'",
+                "$rootScFolder = [System.IO.Path]::GetFullPath((Join-Path -Path $PSScriptRoot -ChildPath 'sc'))",
+                '',
+                'function Get-ShortcutTarget {',
+                '    param([string]$path)',
+                '    try {',
+                '        $shortcut = $wshell.CreateShortcut($path)',
+                '        $target = $shortcut.TargetPath',
+                '        if (-not [System.IO.Path]::IsPathRooted($target)) {',
+                '            $target = [System.IO.Path]::GetFullPath((Join-Path -Path (Split-Path -Parent $path) -ChildPath $target))',
+                '        } else {',
+                '            $target = [System.IO.Path]::GetFullPath($target)',
+                '        }',
+                '        return $target',
+                '    } catch {',
+                '        return $null',
+                '    }',
+                '}',
                 ''
             ];
 
@@ -2006,19 +2022,19 @@
             if (rootScSelections.length > 0) {
                 scriptLines.push("# --- Processing Root SC Selections ---");
                 scriptLines.push(`if (Test-Path -LiteralPath $rootScFolder) {`);
-                scriptLines.push(`    $shortcuts = Get-ChildItem -LiteralPath $rootScFolder -Filter *.lnk`);
+                scriptLines.push(`    $shortcuts = Get-ChildItem -LiteralPath $rootScFolder -File | Where-Object { $_.Extension -match '^\\.(lnk|ink)$' }`);
                 scriptLines.push(`    foreach ($shortcutFile in $shortcuts) {`);
-                scriptLines.push(`        $shortcut = $wshell.CreateShortcut($shortcutFile.FullName)`);
-                scriptLines.push(`        $targetPath = $shortcut.TargetPath`);
+                scriptLines.push(`        $targetPath = Get-ShortcutTarget $shortcutFile.FullName`);
+                scriptLines.push('        if (-not $targetPath) { Write-Host "Skipping unresolvable shortcut: $($shortcutFile.Name)" -ForegroundColor Yellow; continue }');
                 
                 rootScSelections.forEach(sel => {
                     const escapedProjectPath = escapePSString(sel.projectPath);
-                    scriptLines.push(`        $projectCheckPath = Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}'`);
+                    scriptLines.push(`        $projectCheckPath = [System.IO.Path]::GetFullPath((Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}'))`);
                     scriptLines.push(`        if ($targetPath.StartsWith($projectCheckPath + [IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) -or $targetPath -eq $projectCheckPath) {`);
                     scriptLines.push(`            if ($playlistContent -notcontains $targetPath) {`);
                     scriptLines.push(`                $playlistContent.Add($targetPath)`);
                     scriptLines.push(`                Write-Host "Added to playlist (root): $($shortcutFile.Name)"`);
-                    scriptLines.push(`            }`);
+                    scriptLines.push(`            } else { Write-Host "Skipping duplicate target from root: $($shortcutFile.Name)" -ForegroundColor DarkGray }`);
                     scriptLines.push(`        }`);
                 });
 
@@ -2035,15 +2051,16 @@
                     if (sel.projectPath) {
                         projectPathVar = `Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}'`;
                     }
-                    scriptLines.push(`    $projectPath = ${projectPathVar}`);
+                    scriptLines.push(`    $projectPath = [System.IO.Path]::GetFullPath((${projectPathVar}))`);
                     scriptLines.push(`    if (Test-Path -LiteralPath $projectPath) {`);
-                    scriptLines.push(`        Get-ChildItem -LiteralPath $projectPath -Filter *.lnk -Recurse | Where-Object { -not $_.FullName.StartsWith($rootScFolder + [IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object {`);
-                    scriptLines.push(`            $shortcut = $wshell.CreateShortcut($_.FullName)`);
-                    scriptLines.push(`            $targetPath = $shortcut.TargetPath`);
+                    scriptLines.push(`        $projectShortcuts = Get-ChildItem -LiteralPath $projectPath -Recurse -File | Where-Object { $_.Extension -match '^\\.(lnk|ink)$' -and -not $_.FullName.StartsWith($rootScFolder + [IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) }`);
+                    scriptLines.push(`        foreach ($shortcutFile in $projectShortcuts) {`);
+                    scriptLines.push(`            $targetPath = Get-ShortcutTarget $shortcutFile.FullName`);
+                    scriptLines.push('            if (-not $targetPath) { Write-Host "Skipping unresolvable shortcut: $($shortcutFile.Name)" -ForegroundColor Yellow; continue }');
                     scriptLines.push(`            if ($playlistContent -notcontains $targetPath) {`);
                     scriptLines.push(`                $playlistContent.Add($targetPath)`);
-                    scriptLines.push(`                Write-Host "Added to playlist (subfolder): $($_.Name)"`);
-                    scriptLines.push(`            }`);
+                    scriptLines.push(`                Write-Host "Added to playlist (subfolder): $($shortcutFile.Name)"`);
+                    scriptLines.push(`            } else { Write-Host "Skipping duplicate target from subfolder: $($shortcutFile.Name)" -ForegroundColor DarkGray }`);
                     scriptLines.push(`        }`);
                     scriptLines.push(`    }`);
                 });
@@ -2051,9 +2068,9 @@
             }
 
             scriptLines.push(`$playlistPath = Join-Path -Path $PSScriptRoot -ChildPath "playlist.m3u"`);
-            scriptLines.push(`$uniqueContent = $playlistContent | Sort-Object | Get-Unique`);
-            scriptLines.push(`$uniqueContent | Out-File -FilePath $playlistPath -Encoding utf8`);
+            scriptLines.push(`$playlistContent | Out-File -FilePath $playlistPath -Encoding utf8`);
             scriptLines.push(`Write-Host "Playlist created at: $playlistPath"`);
+            scriptLines.push(`Write-Host "Total items in playlist: $($playlistContent.Count)"`);
             scriptLines.push('Read-Host -Prompt "Press Enter to exit"');
 
             const script = scriptLines.join('\r\n');
