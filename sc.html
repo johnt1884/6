@@ -1846,23 +1846,8 @@
 
             for (const project of projectFolders) {
                 try {
-                    let subfolderScCount = 0;
-                    async function countShortcutsRecursive(dirHandle) {
-                        let count = 0;
-                        for await (const entry of dirHandle.values()) {
-                            if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.lnk')) {
-                                count++;
-                            } else if (entry.kind === 'directory') {
-                                count += await countShortcutsRecursive(entry);
-                            }
-                        }
-                        return count;
-                    }
-
-                    try {
-                        const scDirHandle = await project.handle.getDirectoryHandle('sc');
-                        subfolderScCount = await countShortcutsRecursive(scDirHandle);
-                    } catch (e) {}
+                    const projectShortcuts = await getScDataForProject(project.handle);
+                    const subfolderScCount = projectShortcuts.size;
 
                     const normalizedProjectName = normalizeProjectKey(project.name);
                     const normalizedProjectPath = normalizeProjectKey(project.path);
@@ -2010,6 +1995,7 @@
                 '$PSScriptRoot = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition',
                 '$playlistContent = New-Object System.Collections.Generic.List[string]',
                 '$wshell = New-Object -ComObject WScript.Shell',
+                "$rootScFolder = Join-Path -Path $PSScriptRoot -ChildPath 'sc'",
                 ''
             ];
 
@@ -2019,7 +2005,6 @@
 
             if (rootScSelections.length > 0) {
                 scriptLines.push("# --- Processing Root SC Selections ---");
-                scriptLines.push(`$rootScFolder = Join-Path -Path $PSScriptRoot -ChildPath 'sc'`);
                 scriptLines.push(`if (Test-Path -LiteralPath $rootScFolder) {`);
                 scriptLines.push(`    $shortcuts = Get-ChildItem -Path $rootScFolder -Filter *.lnk`);
                 scriptLines.push(`    foreach ($shortcutFile in $shortcuts) {`);
@@ -2046,9 +2031,13 @@
                 scriptLines.push("# --- Processing Subfolder SC Selections ---");
                 subfolderScSelections.forEach(sel => {
                     const escapedProjectPath = escapePSString(sel.projectPath);
-                    scriptLines.push(`    $subfolderScPath = Join-Path -Path $PSScriptRoot -ChildPath (Join-Path -Path '${escapedProjectPath}' -ChildPath 'sc')`);
-                    scriptLines.push(`    if (Test-Path -LiteralPath $subfolderScPath) {`);
-                    scriptLines.push(`        Get-ChildItem -Path $subfolderScPath -Filter *.lnk -Recurse | ForEach-Object {`);
+                    let projectPathVar = `$PSScriptRoot`;
+                    if (sel.projectPath) {
+                        projectPathVar = `Join-Path -Path $PSScriptRoot -ChildPath '${escapedProjectPath}'`;
+                    }
+                    scriptLines.push(`    $projectPath = ${projectPathVar}`);
+                    scriptLines.push(`    if (Test-Path -LiteralPath $projectPath) {`);
+                    scriptLines.push(`        Get-ChildItem -Path $projectPath -Filter *.lnk -Recurse | Where-Object { $_.FullName -notlike "$rootScFolder*" } | ForEach-Object {`);
                     scriptLines.push(`            $shortcut = $wshell.CreateShortcut($_.FullName)`);
                     scriptLines.push(`            $targetPath = $shortcut.TargetPath`);
                     scriptLines.push(`            if ($playlistContent -notcontains $targetPath) {`);
