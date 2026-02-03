@@ -11,10 +11,10 @@
             --root-sc-color: #ffe11f;
             --subfolder-sc-color: #00ff1e;
             --both-sc-color: #009dff;
-            --delete-sc-color: red;
-            --header-text-color: #ffffff;
-            --row-number-color: #ffffff;
-            --date-text-color: #ffffff;
+            --delete-sc-color: #ff0101;
+            --header-text-color: #01ff01;
+            --row-number-color: #fcfc01;
+            --date-text-color: #01ffff;
         }
         html, body {
             height: 100%;
@@ -377,19 +377,19 @@
                         </div>
                         <div class="options-row">
                             <label for="delete-sc-color-picker">Delete Selection Outline</label>
-                            <input type="color" id="delete-sc-color-picker" value="#ff0000">
+                            <input type="color" id="delete-sc-color-picker" value="#ff0101">
                         </div>
                         <div class="options-row">
                             <label for="header-text-color-picker">Folder Header Text</label>
-                            <input type="color" id="header-text-color-picker" value="#ffffff">
+                            <input type="color" id="header-text-color-picker" value="#01ff01">
                         </div>
                         <div class="options-row">
                             <label for="row-number-color-picker">Show Numbers Header Text</label>
-                            <input type="color" id="row-number-color-picker" value="#ffffff">
+                            <input type="color" id="row-number-color-picker" value="#fcfc01">
                         </div>
                         <div class="options-row">
                             <label for="date-text-color-picker">Date Text Color</label>
-                            <input type="color" id="date-text-color-picker" value="#ffffff">
+                            <input type="color" id="date-text-color-picker" value="#01ffff">
                         </div>
                         <button id="revert-defaults-btn" style="width: 100%; text-align: center; border-top: 1px solid #ccc; font-weight: bold;">Revert to Default Colors</button>
                     </div>
@@ -592,10 +592,10 @@
                         'root-sc-color': '#ffe11f',
                         'subfolder-sc-color': '#00ff1e',
                         'both-sc-color': '#009dff',
-                        'delete-sc-color': '#ff0000',
-                        'header-text-color': '#ffffff',
-                        'row-number-color': '#ffffff',
-                        'date-text-color': '#ffffff'
+                        'delete-sc-color': '#ff0101',
+                        'header-text-color': '#01ff01',
+                        'row-number-color': '#fcfc01',
+                        'date-text-color': '#01ffff'
                     };
                     Object.keys(defaults).forEach(id => {
                         const color = defaults[id];
@@ -1268,11 +1268,7 @@
                             
                             let timestamp = 0;
                             if (isNewOnly) {
-                                timestamp = await getTimestamp(entry);
-                                if (timestamp === null) {
-                                    console.log(`Skipping project ${entry.name} in New Videos mode because scdate.txt is missing.`);
-                                    continue; 
-                                }
+                                timestamp = (await getTimestamp(entry)) || 0;
                             }
 
                             projectFolders.push({ 
@@ -1292,15 +1288,7 @@
                 await findDirectoryHandleByName(currentDirHandle, 'Edit Thumbnails');
                 let timestamp = 0;
                 if (isNewOnly) {
-                    timestamp = await getTimestamp(currentDirHandle);
-                    // If the user selected a project directly and it has no scdate.txt,
-                    // we'll still load it but with timestamp 0? 
-                    // No, the clarification says "choice to load... is dependent on... scdate.txt".
-                    // So if it's missing, we don't load it.
-                    if (timestamp === null) {
-                        alert('This project does not have an scdate.txt file and cannot be loaded in "New Videos" mode.');
-                        return;
-                    }
+                    timestamp = (await getTimestamp(currentDirHandle)) || 0;
                 }
                 projectFolders.push({ 
                     handle: currentDirHandle, 
@@ -1902,27 +1890,36 @@
                     videoFiles.sort((a, b) => a.name.localeCompare(b.name));
 
                     let candidateVideos = [];
+                    const shortcutNames = new Set();
                     try {
                         const scDirHandle = await project.handle.getDirectoryHandle('sc');
-                        const shortcutNames = new Set();
                         for await (const entry of scDirHandle.values()) {
                             if (entry.kind === 'file') {
                                 shortcutNames.add(entry.name.toLowerCase());
                             }
                         }
+                    } catch (e) {}
 
-                        for (const v of videoFiles) {
-                            if (checkShortcut(v.name, shortcutNames)) {
-                                candidateVideos.push(v);
-                                if (candidateVideos.length >= 5) break;
-                            }
+                    // Priority 1: Videos with shortcuts
+                    for (const v of videoFiles) {
+                        if (checkShortcut(v.name, shortcutNames)) {
+                            candidateVideos.push(v);
                         }
-                    } catch (e) {
-                        // sc folder doesn't exist or is inaccessible
+                    }
+                    if (candidateVideos.length > 5) {
+                        candidateVideos = candidateVideos.slice(0, 5);
                     }
 
-                    if (candidateVideos.length === 0) {
-                        candidateVideos = videoFiles.slice(0, 5);
+                    // Priority 2: Other videos (alphabetical)
+                    if (candidateVideos.length < 5) {
+                        for (const v of videoFiles) {
+                            if (!checkShortcut(v.name, shortcutNames)) {
+                                if (!candidateVideos.includes(v)) {
+                                    candidateVideos.push(v);
+                                    if (candidateVideos.length >= 5) break;
+                                }
+                            }
+                        }
                     }
 
                     const header = document.createElement('h2');
@@ -1948,6 +1945,10 @@
                     nextBtn.textContent = '▶';
                     navContainer.appendChild(nextBtn);
 
+                    if (candidateVideos.length <= 1) {
+                        navContainer.style.display = 'none';
+                    }
+
                     const dateInfo = document.createElement('div');
                     dateInfo.className = 'date-info';
                     rowDiv.appendChild(dateInfo);
@@ -1967,7 +1968,7 @@
                         dateInfo.textContent = `Created: ${new Date(videoFile.lastModified).toLocaleString()}`;
 
                         const videoBaseName = video.name.substring(0, video.name.lastIndexOf('.'));
-                        const editDirHandle = await project.handle.getDirectoryHandle('Edit Thumbnails');
+                        const editDirHandle = await findDirectoryHandleByName(project.handle, 'Edit Thumbnails');
                         const thumbnailFiles = [];
                         for await (const entry of editDirHandle.values()) {
                             if (entry.kind === 'file' && entry.name.startsWith(videoBaseName)) {
